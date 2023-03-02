@@ -1,0 +1,16 @@
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+COMMENT = _{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
+
+digit = @{ ASCII_DIGIT }
+letter = @{ "_" | ASCII_ALPHA }
+identifier = @{ letter ~ (letter | digit)* }
+
+type_tag_name = { identifier }
+field_name = { identifier }
+structure_name = { identifier }
+
+type_args = { "[" ~ type_tag_name ~ ("," ~ identifier)* ~ "]" }
+type_tag = { type_tag_name ~ type_args? }
+field = { field_name ~ ":" ~ type_tag }
+structure = { structure_name ~ field+ }
+project = { structure+ ~ EOI }

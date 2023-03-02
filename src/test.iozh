@@ -1,0 +1,12 @@
+User
+  name: String
+  createdAt: DateTime
+
+  telegramId: I64
+  telegramName: String
+
+Game
+  name: String
+  createdAt: DateTime
+  owner: User
+  players: List[User]
