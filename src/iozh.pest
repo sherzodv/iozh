@@ -14,6 +14,11 @@ field = { field_name ~ ":" ~ type_tag }
 fields = _{ (","? ~ field)+ }
 structure = { (type_tag ~ fields) | (type_tag ~ "{" ~ fields ~ "}") | (type_tag ~ "(" ~ fields ~ ")") }
 
+method_result = { type_tag }
+method = { type_tag ~ "(" ~ fields ~ ")" ~ "=>" ~ method_result }
+service = { type_tag ~ method+ }
+
 choice_item = { type_tag }
 choice = { type_tag ~ "=" ~ "|"? ~ (structure | choice_item) ~ ("|" ~ (structure | choice_item))* }
-project = { (structure | choice)+ }
+
+project = { (structure | choice | service)+ }

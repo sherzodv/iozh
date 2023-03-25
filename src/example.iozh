@@ -26,7 +26,7 @@ Message
   reactions: List[Reaction]
 
 UserService
-  findByName(name: String): List[User]
+  findByName(name: String) => List[User]
 
 http2 {
   REST Game // generates standard CRUD routes for Game entity

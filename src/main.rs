@@ -49,10 +49,26 @@ pub struct Choice {
 }
 
 #[derive(Debug)]
+pub struct Method {
+    pos: Pos,
+    name: TypeTag,
+    args: Vec<Field>,
+    result: TypeTag,
+}
+
+#[derive(Debug)]
+pub struct Service {
+    pos: Pos,
+    name: TypeTag,
+    methods: Vec<Method>,
+}
+
+#[derive(Debug)]
 pub struct Project {
     pos: Pos,
     structures: Vec<Structure>,
     choices: Vec<Choice>,
+    services: Vec<Service>,
 }
 
 impl fmt::Debug for Pos {
@@ -197,10 +213,74 @@ fn parse_choice(pair: Pair<Rule>) -> Choice {
     }
 }
 
+fn parse_method(pair: Pair<Rule>) -> Method {
+    let mut name: TypeTag = TypeTag {
+        pos: Pos { line: 0, col: 0 },
+        name: String::new(),
+        args: Vec::new(),
+    };
+    let mut args = Vec::new();
+    let mut result = TypeTag {
+        pos: Pos { line: 0, col: 0 },
+        name: String::new(),
+        args: Vec::new(),
+    };
+    let (mut line, mut col) = (0, 0);
+    for pair in pair.into_inner() {
+        (line, col) = pair.as_span().start_pos().line_col();
+        match pair.as_rule() {
+            Rule::type_tag => {
+                name = parse_type_tag(pair);
+            }
+            Rule::field => {
+                args.push(parse_field(pair));
+            }
+            Rule::method_result => {
+                result = parse_type_tag(pair);
+            }
+            r => unreachable!("unhandled rule: {:?}", r),
+        }
+    }
+    Method {
+        pos: Pos { line, col },
+        name,
+        args,
+        result,
+    }
+}
+
+fn parse_service(pair: Pair<Rule>) -> Service {
+    let mut name: TypeTag = TypeTag {
+        pos: Pos { line: 0, col: 0 },
+        name: String::new(),
+        args: Vec::new(),
+    };
+    let (mut line, mut col) = (0, 0);
+    let mut methods = Vec::new();
+    for pair in pair.into_inner() {
+        (line, col) = pair.as_span().start_pos().line_col();
+        match pair.as_rule() {
+            Rule::type_tag => {
+                name = parse_type_tag(pair);
+            }
+            Rule::method => {
+                methods.push(parse_method(pair));
+            }
+            r => unreachable!("unhandled rule: {:?}", r),
+        }
+    }
+    Service {
+        pos: Pos { line, col },
+        name,
+        methods,
+    }
+}
+
 fn parse_project(source: &str) -> Result<Project, Error<Rule>> {
     let projects: Pairs<Rule> = Iozh::parse(Rule::project, source)?;
     let mut structures: Vec<Structure> = Vec::new();
     let mut choices: Vec<Choice> = Vec::new();
+    let mut services: Vec<Service> = Vec::new();
     projects.for_each(|project| {
         let items = project.into_inner();
         items.for_each(|item| {
@@ -211,6 +291,9 @@ fn parse_project(source: &str) -> Result<Project, Error<Rule>> {
                 Rule::choice => {
                     choices.push(parse_choice(item));
                 }
+                Rule::service => {
+                    services.push(parse_service(item));
+                }
                 r => unreachable!("unhandled rule: {:?}", r),
             }
         });
@@ -219,6 +302,7 @@ fn parse_project(source: &str) -> Result<Project, Error<Rule>> {
         pos: Pos { line: 0, col: 0 },
         structures,
         choices,
+        services,
     })
 }
 
