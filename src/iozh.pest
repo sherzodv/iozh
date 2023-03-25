@@ -5,12 +5,14 @@ digit = @{ ASCII_DIGIT }
 letter = @{ "_" | ASCII_ALPHA }
 identifier = @{ letter ~ (letter | digit)* }
 
-type_tag_name = { identifier }
+type_name = { identifier }
 field_name = { identifier }
-structure_name = { identifier }
 
 type_args = { "[" ~ type_tag ~ ("," ~ type_tag)* ~ "]" }
-type_tag = { type_tag_name ~ type_args? }
+type_tag = { type_name ~ type_args? }
 field = { field_name ~ ":" ~ type_tag }
-structure = { structure_name ~ type_args? ~ field+ }
-project = { structure+ }
+structure = { type_tag ~ field+ }
+
+choice_item = { type_tag }
+choice = { type_tag ~ "=" ~ "|"? ~ choice_item ~ ("|" ~ choice_item)* }
+project = { (structure | choice)+ }

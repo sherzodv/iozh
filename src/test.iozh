@@ -1,7 +1,6 @@
 User
   name: String
   createdAt: DateTime
-
   telegramId: I64
   telegramName: String
 
@@ -14,3 +13,12 @@ Game
 Result[A, E]
   positive: List[A]
   negative: List[E]
+
+UserStatus = 
+  | Active
+  | Inactive
+  | Deleted
+
+OnlineStatus = 
+  Online
+  | Offline

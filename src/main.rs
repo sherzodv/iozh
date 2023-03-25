@@ -31,15 +31,22 @@ pub struct Field {
 #[derive(Debug)]
 pub struct Structure {
     pos: Pos,
-    name: String,
-    args: Vec<TypeTag>,
+    name: TypeTag,
     fields: Vec<Field>,
+}
+
+#[derive(Debug)]
+pub struct Choice {
+    pos: Pos,
+    name: TypeTag,
+    choices: Vec<TypeTag>,
 }
 
 #[derive(Debug)]
 pub struct Project {
     pos: Pos,
     structures: Vec<Structure>,
+    choices: Vec<Choice>,
 }
 
 impl fmt::Debug for Pos {
@@ -80,7 +87,7 @@ fn parse_type_tag(pair: Pair<Rule>) -> TypeTag {
     for pair in pair.into_inner() {
         (line, col) = pair.as_span().start_pos().line_col();
         match pair.as_rule() {
-            Rule::type_tag_name => {
+            Rule::type_name => {
                 name = pair.as_str().to_string();
             }
             Rule::type_args => {
@@ -124,18 +131,18 @@ fn parse_field(pair: Pair<Rule>) -> Field {
 }
 
 fn parse_structure(pair: Pair<Rule>) -> Structure {
-    let mut name = String::new();
+    let mut name = TypeTag{
+        pos: Pos { line: 0, col: 0 },
+        name: String::new(),
+        args: Vec::new(),
+    };
     let (mut line, mut col) = (0, 0);
-    let mut args = Vec::new();
     let mut fields = Vec::new();
     for pair in pair.into_inner() {
         (line, col) = pair.as_span().start_pos().line_col();
         match pair.as_rule() {
-            Rule::structure_name => {
-                name = pair.as_str().to_string();
-            }
-            Rule::type_args => {
-                args = parse_type_args(pair);
+            Rule::type_tag => {
+                name = parse_type_tag(pair);
             }
             Rule::field => {
                 fields.push(parse_field(pair));
@@ -146,30 +153,61 @@ fn parse_structure(pair: Pair<Rule>) -> Structure {
     Structure {
         pos: Pos { line, col },
         name,
-        args,
         fields,
+    }
+}
+
+fn parse_choice(pair: Pair<Rule>) -> Choice {
+    let mut name: TypeTag = TypeTag {
+        pos: Pos { line: 0, col: 0 },
+        name: String::new(),
+        args: Vec::new(),
+    };
+    let (mut line, mut col) = (0, 0);
+    let mut choices = Vec::new();
+
+    for pair in pair.into_inner() {
+        (line, col) = pair.as_span().start_pos().line_col();
+        match pair.as_rule() {
+            Rule::type_tag => {
+                name = parse_type_tag(pair);
+            }
+            Rule::choice_item => {
+                let mut choice_inner_items = parse_type_args(pair);
+                choices.append(choice_inner_items.as_mut());
+            }
+            r => unreachable!("unhandled rule: {:?}", r),
+        }
+    }
+    Choice {
+        pos: Pos { line, col },
+        name,
+        choices,
     }
 }
 
 fn parse_project(source: &str) -> Result<Project, Error<Rule>> {
     let projects: Pairs<Rule> = Iozh::parse(Rule::project, source)?;
     let mut structures: Vec<Structure> = Vec::new();
+    let mut choices: Vec<Choice> = Vec::new();
     projects.for_each(|project| {
-        let structs = project.into_inner();
-        structs.for_each(|s| {
-            match s.as_rule() {
+        let items = project.into_inner();
+        items.for_each(|item| {
+            match item.as_rule() {
                 Rule::structure => {
-                    structures.push(parse_structure(s));
+                    structures.push(parse_structure(item));
                 }
-                x => {
-                    println!("unhandled rule: {:?}", x);
+                Rule::choice => {
+                    choices.push(parse_choice(item));
                 }
+                r => unreachable!("unhandled rule: {:?}", r),
             }
         });
     });
     Ok(Project {
         pos: Pos { line: 0, col: 0 },
-        structures
+        structures,
+        choices,
     })
 }
 
