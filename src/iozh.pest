@@ -11,7 +11,8 @@ field_name = { identifier }
 type_args = { "[" ~ type_tag ~ ("," ~ type_tag)* ~ "]" }
 type_tag = { type_name ~ type_args? }
 field = { field_name ~ ":" ~ type_tag }
-structure = { (type_tag ~ (","? ~ field)+) | (type_tag ~ "{" ~ (","? ~ field)+ ~ "}") | (type_tag ~ "(" ~ (","? ~ field)+ ~ ")") }
+fields = _{ (","? ~ field)+ }
+structure = { (type_tag ~ fields) | (type_tag ~ "{" ~ fields ~ "}") | (type_tag ~ "(" ~ fields ~ ")") }
 
 choice_item = { type_tag }
 choice = { type_tag ~ "=" ~ "|"? ~ (structure | choice_item) ~ ("|" ~ (structure | choice_item))* }
