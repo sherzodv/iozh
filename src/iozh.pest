@@ -9,8 +9,8 @@ type_tag_name = { identifier }
 field_name = { identifier }
 structure_name = { identifier }
 
-type_args = { "[" ~ type_tag_name ~ ("," ~ identifier)* ~ "]" }
+type_args = { "[" ~ type_tag ~ ("," ~ type_tag)* ~ "]" }
 type_tag = { type_tag_name ~ type_args? }
 field = { field_name ~ ":" ~ type_tag }
-structure = { structure_name ~ field+ }
-project = { structure+ ~ EOI }
+structure = { structure_name ~ type_args? ~ field+ }
+project = { structure+ }

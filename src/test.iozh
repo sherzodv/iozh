@@ -10,3 +10,7 @@ Game
   createdAt: DateTime
   owner: User
   players: List[User]
+
+Result[A, E]
+  positive: List[A]
+  negative: List[E]

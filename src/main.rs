@@ -2,6 +2,7 @@ extern crate pest;
 #[macro_use]
 extern crate pest_derive;
 
+use core::fmt;
 use pest::Parser;
 use pest::error::Error;
 use pest::iterators::{Pair, Pairs};
@@ -10,20 +11,17 @@ use pest::iterators::{Pair, Pairs};
 #[grammar = "iozh.pest"]
 pub struct Iozh;
 
-#[derive(Debug)]
 pub struct Pos {
     line: usize,
     col: usize,
 }
 
-#[derive(Debug)]
 pub struct TypeTag {
     pos: Pos,
     name: String,
     args: Vec<TypeTag>,
 }
 
-#[derive(Debug)]
 pub struct Field {
     pos: Pos,
     name: String,
@@ -34,7 +32,7 @@ pub struct Field {
 pub struct Structure {
     pos: Pos,
     name: String,
-    args: Vec<String>,
+    args: Vec<TypeTag>,
     fields: Vec<Field>,
 }
 
@@ -44,20 +42,51 @@ pub struct Project {
     structures: Vec<Structure>,
 }
 
+impl fmt::Debug for Pos {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "({}, {})", self.line, self.col)
+    }
+}
+
+impl fmt::Debug for TypeTag {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}{:#?}", self.name, self.args)
+    }
+}
+
+impl fmt::Debug for Field {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}: {:#?}", self.name, self.type_tag)
+    }
+}
+
+fn parse_type_args(pair: Pair<Rule>) -> Vec<TypeTag> {
+    let mut args = Vec::new();
+    for pair in pair.into_inner() {
+        match pair.as_rule() {
+            Rule::type_tag => {
+                args.push(parse_type_tag(pair));
+            }
+            x => println!("unhandled rule: {:?}", x)
+        }
+    }
+    args
+}
+
 fn parse_type_tag(pair: Pair<Rule>) -> TypeTag {
     let (mut line, mut col) = (0, 0);
     let mut name = String::new();
     let mut args = Vec::new();
     for pair in pair.into_inner() {
+        (line, col) = pair.as_span().start_pos().line_col();
         match pair.as_rule() {
             Rule::type_tag_name => {
-                (line, col) = pair.as_span().start_pos().line_col();
                 name = pair.as_str().to_string();
             }
             Rule::type_args => {
-                args.push(parse_type_tag(pair));
+                args = parse_type_args(pair);
             }
-            _ => unreachable!(),
+            x => println!("unhandled rule: {:?}", x)
         }
     }
     TypeTag {
@@ -76,15 +105,15 @@ fn parse_field(pair: Pair<Rule>) -> Field {
         args: Vec::new(),
     };
     for pair in pair.into_inner() {
+        (line, col) = pair.as_span().start_pos().line_col();
         match pair.as_rule() {
             Rule::field_name => {
-                (line, col) = pair.as_span().start_pos().line_col();
                 name = pair.as_str().to_string();
             }
             Rule::type_tag => {
                 type_tag = parse_type_tag(pair);
             }
-            _ => unreachable!(),
+            r => unreachable!("unhandled rule: {:?}", r),
         }
     }
     Field {
@@ -100,15 +129,18 @@ fn parse_structure(pair: Pair<Rule>) -> Structure {
     let mut args = Vec::new();
     let mut fields = Vec::new();
     for pair in pair.into_inner() {
+        (line, col) = pair.as_span().start_pos().line_col();
         match pair.as_rule() {
             Rule::structure_name => {
-                (line, col) = pair.as_span().start_pos().line_col();
                 name = pair.as_str().to_string();
+            }
+            Rule::type_args => {
+                args = parse_type_args(pair);
             }
             Rule::field => {
                 fields.push(parse_field(pair));
             }
-            _ => unreachable!(),
+            r => unreachable!("unhandled rule: {:?}", r),
         }
     }
     Structure {
@@ -141,30 +173,10 @@ fn parse_project(source: &str) -> Result<Project, Error<Rule>> {
     })
 }
 
-fn debug_print_indented_pair(root: &Pair<Rule>, level: usize) {
-    for _ in 0..level {
-        print!("  ");
-    }
-    println!("{:?}", root.as_str());
-    for pair in root.clone().into_inner() {
-        debug_print_indented_pair(&pair, level + 1);
-    }
-}
-
-fn debug_print_indented(project: &Project) {
-    println!("Project:");
-    for structure in &project.structures {
-        println!("  Structure ({}, {}): {}", structure.pos.line, structure.pos.col, structure.name);
-        for field in &structure.fields {
-            println!("    Field({}, {}): {} {}", field.pos.line, field.pos.col, field.name, field.type_tag.name);
-        }
-    }
-}
-
 fn read_file_and_parse() {
     let source = std::fs::read_to_string("src/test.iozh").unwrap();
     let project = parse_project(&source).unwrap();
-    debug_print_indented(&project)
+    println!("{:#?}", project);
 }
 
 fn main() {
