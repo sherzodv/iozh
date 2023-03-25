@@ -20,5 +20,5 @@ UserStatus =
   | Deleted
 
 OnlineStatus = 
-  Online since: DateTime
-  | Offline
+  Online { since: DateTime duration: Duration  }
+  | Offline ( since: DateTime , duration: Duration )
