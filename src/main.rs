@@ -64,11 +64,16 @@ pub struct Service {
 }
 
 #[derive(Debug)]
+enum ProjectItem {
+    Structure(Structure),
+    Choice(Choice),
+    Service(Service),
+}
+
+#[derive(Debug)]
 pub struct Project {
     pos: Pos,
-    structures: Vec<Structure>,
-    choices: Vec<Choice>,
-    services: Vec<Service>,
+    items: Vec<ProjectItem>,
 }
 
 impl fmt::Debug for Pos {
@@ -278,31 +283,29 @@ fn parse_service(pair: Pair<Rule>) -> Service {
 
 fn parse_project(source: &str) -> Result<Project, Error<Rule>> {
     let projects: Pairs<Rule> = Iozh::parse(Rule::project, source)?;
-    let mut structures: Vec<Structure> = Vec::new();
-    let mut choices: Vec<Choice> = Vec::new();
-    let mut services: Vec<Service> = Vec::new();
+    let mut name = String::new();
+    let (mut line, mut col) = (0, 0);
+    let mut items: Vec<ProjectItem> = Vec::new();
     projects.for_each(|project| {
-        let items = project.into_inner();
-        items.for_each(|item| {
-            match item.as_rule() {
+        let entities = project.into_inner();
+        entities.for_each(|entity| {
+            match entity.as_rule() {
                 Rule::structure => {
-                    structures.push(parse_structure(item));
+                    items.push(ProjectItem::Structure(parse_structure(entity)));
                 }
                 Rule::choice => {
-                    choices.push(parse_choice(item));
+                    items.push(ProjectItem::Choice(parse_choice(entity)));
                 }
                 Rule::service => {
-                    services.push(parse_service(item));
+                    items.push(ProjectItem::Service(parse_service(entity)));
                 }
                 r => unreachable!("unhandled rule: {:?}", r),
             }
-        });
+        })
     });
     Ok(Project {
         pos: Pos { line: 0, col: 0 },
-        structures,
-        choices,
-        services,
+        items,
     })
 }
 

@@ -19,9 +19,9 @@ UserStatus =
   | Inactive
   | Deleted
 
+UserService
+  findByName(name: String) => List[User]
+
 OnlineStatus = 
   Online { since: DateTime duration: Duration  }
   | Offline ( since: DateTime , duration: Duration )
-
-UserService
-  findByName(name: String) => List[User]
