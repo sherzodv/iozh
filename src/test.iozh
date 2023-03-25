@@ -25,3 +25,10 @@ UserService
 OnlineStatus = 
   Online { since: DateTime duration: Duration  }
   | Offline ( since: DateTime , duration: Duration )
+
+GameService
+  POST User *> /user/:id *> UserService.changeStatus
+   id: I64
+   status: OnlineStatus
+  GET Boo *> /user/:id *> UserService.findById
+   id: I64

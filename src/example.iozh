@@ -30,7 +30,7 @@ UserService
 
 http2 {
   REST Game // generates standard CRUD routes for Game entity
-  POST User /user/:id -> UserResponse
+  POST User *> /user/{id} *> UserService.findByName
    id: I64
    status: OnlineStatus  // If params are not in the path they are tried to be parsed from query first and then from body
   GET /user/:id

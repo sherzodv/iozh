@@ -7,18 +7,34 @@ identifier = @{ letter ~ (letter | digit)* }
 
 type_name = { identifier }
 field_name = { identifier }
+method_name = { identifier }
 
 type_args = { "[" ~ type_tag ~ ("," ~ type_tag)* ~ "]" }
 type_tag = { type_name ~ type_args? }
 field = { field_name ~ ":" ~ type_tag }
 fields = _{ (","? ~ field)+ }
-structure = { (type_tag ~ fields) | (type_tag ~ "{" ~ fields ~ "}") | (type_tag ~ "(" ~ fields ~ ")") }
+fields_block = _{ fields | ("{" ~ fields ~ "}") | "(" ~ fields ~ ")" }
+structure = { type_tag ~ fields_block }
 
 method_result = { type_tag }
-method = { type_tag ~ "(" ~ fields ~ ")" ~ "=>" ~ method_result }
-service = { type_tag ~ method+ }
+method = { type_tag ~ fields_block ~ "=>" ~ method_result }
+methods = _{ (","? ~ method)+ }
+methods_block = _{ methods | ("{" ~ methods ~ "}") | "(" ~ methods ~ ")" }
+service = { type_tag ~ methods_block }
 
 choice_item = { type_tag }
 choice = { type_tag ~ "=" ~ "|"? ~ (structure | choice_item) ~ ("|" ~ (structure | choice_item))* }
 
-project = { (structure | choice | service)+ }
+service_ref = { type_tag }
+method_ref = { service_ref ~ "." ~ type_tag }
+http_route_var = @{ (":" ~ identifier) | ("{" ~ identifier ~ "}") }
+http_path_part = @{ (ASCII_ALPHA | ASCII_DIGIT | "/" | "." | "-" | "_" | "~" | "!" | "$" | "&" | "'" | "(" | ")" | "+" | "," | ";" | "=" | "@" | "%")+ }
+http_route_pattern = { &"/" ~ (!"*>" ~ (http_route_var | http_path_part)+)+ }
+http_method = { "GET" | "PUT" | "POST" | "DELETE" | "OPTIONS" | "HEAD" | "PATCH" | "TRACE" | "CONNECT" }
+http_route = { http_method ~ type_tag ~ "*>" ~ http_route_pattern ~ "*>" ~ method_ref ~ fields_block }
+http_routes = _{ http_route+ }
+http_routes_block = _{ http_routes | ("{" ~ http_routes ~ "}") | "(" ~ http_routes ~ ")" }
+
+http_service = { type_tag ~ http_routes_block }
+
+project = { (http_service | structure | choice | service)+ }

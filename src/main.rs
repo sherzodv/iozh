@@ -64,10 +64,41 @@ pub struct Service {
 }
 
 #[derive(Debug)]
+pub struct MethodRef {
+    pos: Pos,
+    service: TypeTag,
+    method: TypeTag,
+}
+
+#[derive(Debug)]
+pub struct HttpRoutePattern {
+    pos: Pos,
+    items: Vec<String>,
+}
+
+#[derive(Debug)]
+pub struct HttpRoute {
+    pos: Pos,
+    verb: String,
+    input: TypeTag,
+    pattern: HttpRoutePattern,
+    method: MethodRef,
+    fields: Vec<Field>,
+}
+
+#[derive(Debug)]
+pub struct HttpService {
+    pos: Pos,
+    name: TypeTag,
+    routes: Vec<HttpRoute>,   
+}
+
+#[derive(Debug)]
 enum ProjectItem {
     Structure(Structure),
     Choice(Choice),
     Service(Service),
+    HttpService(HttpService),
 }
 
 #[derive(Debug)]
@@ -101,7 +132,7 @@ fn parse_type_args(pair: Pair<Rule>) -> Vec<TypeTag> {
             Rule::type_tag => {
                 args.push(parse_type_tag(pair));
             }
-            x => println!("unhandled rule: {:?}", x)
+            x => println!("unhandled rule: {:#?}", x)
         }
     }
     args
@@ -120,7 +151,7 @@ fn parse_type_tag(pair: Pair<Rule>) -> TypeTag {
             Rule::type_args => {
                 args = parse_type_args(pair);
             }
-            x => println!("unhandled rule: {:?}", x)
+            x => println!("unhandled rule: {:#?}", x)
         }
     }
     TypeTag {
@@ -147,7 +178,7 @@ fn parse_field(pair: Pair<Rule>) -> Field {
             Rule::type_tag => {
                 type_tag = parse_type_tag(pair);
             }
-            r => unreachable!("unhandled rule: {:?}", r),
+            r => unreachable!("unhandled rule: {:#?}", r),
         }
     }
     Field {
@@ -174,7 +205,7 @@ fn parse_structure(pair: Pair<Rule>) -> Structure {
             Rule::field => {
                 fields.push(parse_field(pair));
             }
-            r => unreachable!("unhandled rule: {:?}", r),
+            r => unreachable!("unhandled rule: {:#?}", r),
         }
     }
     Structure {
@@ -208,7 +239,7 @@ fn parse_choice(pair: Pair<Rule>) -> Choice {
                     choices.push(ChoiceItem::TypeTag(item));
                 }
             }
-            r => unreachable!("unhandled rule: {:?}", r),
+            r => unreachable!("unhandled rule: {:#?}", r),
         }
     }
     Choice {
@@ -243,7 +274,7 @@ fn parse_method(pair: Pair<Rule>) -> Method {
             Rule::method_result => {
                 result = parse_type_tag(pair);
             }
-            r => unreachable!("unhandled rule: {:?}", r),
+            r => unreachable!("unhandled rule: {:#?}", r),
         }
     }
     Method {
@@ -271,13 +302,149 @@ fn parse_service(pair: Pair<Rule>) -> Service {
             Rule::method => {
                 methods.push(parse_method(pair));
             }
-            r => unreachable!("unhandled rule: {:?}", r),
+            r => unreachable!("unhandled rule: {:#?}", r),
         }
     }
     Service {
         pos: Pos { line, col },
         name,
         methods,
+    }
+}
+
+fn parse_method_ref(pair: Pair<Rule>) -> MethodRef {
+    let mut service: TypeTag = TypeTag {
+        pos: Pos { line: 0, col: 0 },
+        name: String::new(),
+        args: Vec::new(),
+    };
+    let mut method: TypeTag = TypeTag {
+        pos: Pos { line: 0, col: 0 },
+        name: String::new(),
+        args: Vec::new(),
+    };
+    let (mut line, mut col) = (0, 0);
+    for pair in pair.into_inner() {
+        (line, col) = pair.as_span().start_pos().line_col();
+        match pair.as_rule() {
+            Rule::service_ref => {
+                service = parse_type_tag(pair.into_inner().next().unwrap());
+            }
+            Rule::type_tag => {
+                method = parse_type_tag(pair);
+            }
+            r => unreachable!("unhandled rule: {:#?}", r),
+        }
+    }
+    MethodRef {
+        pos: Pos { line, col },
+        service,
+        method,
+    }
+}
+
+fn parse_http_route_pattern(pair: Pair<Rule>) -> HttpRoutePattern {
+    let (mut line, mut col) = (0, 0);
+    let mut items = Vec::new();
+    for pair in pair.into_inner() {
+        (line, col) = pair.as_span().start_pos().line_col();
+        match pair.as_rule() {
+            Rule::http_route_var => {
+                items.push(pair.as_str().to_string());
+            }
+            Rule::http_path_part => {
+                items.push(pair.as_str().to_string());
+            }
+            r => unreachable!("unhandled rule: {:#?}", r),
+        }
+    }
+    HttpRoutePattern {
+        pos: Pos { line, col },
+        items,
+    }
+}
+
+fn parse_http_route(pair: Pair<Rule>) -> HttpRoute {
+    let mut verb: String = String::new();
+    let mut input: TypeTag = TypeTag {
+        pos: Pos { line: 0, col: 0 },
+        name: String::new(),
+        args: Vec::new(),
+    };
+    let mut pattern: HttpRoutePattern = HttpRoutePattern {
+        pos: Pos { line: 0, col: 0 },
+        items: Vec::new(),
+    };
+    let mut method: MethodRef = MethodRef {
+        pos: Pos { line: 0, col: 0 },
+        service: TypeTag {
+            pos: Pos { line: 0, col: 0 },
+            name: String::new(),
+            args: Vec::new(),
+        },
+        method: TypeTag {
+            pos: Pos { line: 0, col: 0 },
+            name: String::new(),
+            args: Vec::new(),
+        },
+    };
+    let mut fields = Vec::new();
+    let (mut line, mut col) = (0, 0);
+    for pair in pair.into_inner() {
+        (line, col) = pair.as_span().start_pos().line_col();
+        match pair.as_rule() {
+            Rule::http_method => {
+                verb = pair.as_str().to_string();
+            }
+            Rule::type_tag => {
+                input = parse_type_tag(pair);
+            }
+            Rule::http_route_pattern => {
+                pattern = parse_http_route_pattern(pair);
+            }
+            Rule::method_ref => {
+                method = parse_method_ref(pair);
+            }
+            Rule::field => {
+                fields.push(parse_field(pair));
+            } 
+            r => unreachable!("unhandled rule: {:#?}", r),
+        }
+    }
+    HttpRoute {
+        pos: Pos { line, col },
+        verb,
+        input,
+        pattern,
+        method,
+        fields,
+    }
+}
+
+fn parse_http_service(pair: Pair<Rule>) -> HttpService {
+    let mut name: TypeTag = TypeTag {
+        pos: Pos { line: 0, col: 0 },
+        name: String::new(),
+        args: Vec::new(),
+    };
+    let (mut line, mut col) = (0, 0);
+    let mut routes = Vec::new();
+    for pair in pair.into_inner() {
+        (line, col) = pair.as_span().start_pos().line_col();
+        match pair.as_rule() {
+            Rule::type_tag => {
+                name = parse_type_tag(pair);
+            }
+            Rule::http_route => {
+                routes.push(parse_http_route(pair));
+            }
+            r => unreachable!("unhandled rule: {:#?}", r),
+        }
+    }
+    HttpService {
+        pos: Pos { line, col },
+        name,
+        routes,
     }
 }
 
@@ -299,7 +466,10 @@ fn parse_project(source: &str) -> Result<Project, Error<Rule>> {
                 Rule::service => {
                     items.push(ProjectItem::Service(parse_service(entity)));
                 }
-                r => unreachable!("unhandled rule: {:?}", r),
+                Rule::http_service => {
+                    items.push(ProjectItem::HttpService(parse_http_service(entity)));
+                }
+                r => unreachable!("unhandled rule: {:#?}", r),
             }
         })
     });
