@@ -14,5 +14,5 @@ field = { field_name ~ ":" ~ type_tag }
 structure = { type_tag ~ field+ }
 
 choice_item = { type_tag }
-choice = { type_tag ~ "=" ~ "|"? ~ choice_item ~ ("|" ~ choice_item)* }
+choice = { type_tag ~ "=" ~ "|"? ~ (structure | choice_item) ~ ("|" ~ (structure | choice_item))* }
 project = { (structure | choice)+ }

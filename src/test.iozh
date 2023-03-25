@@ -20,5 +20,5 @@ UserStatus =
   | Deleted
 
 OnlineStatus = 
-  Online
+  Online since: DateTime
   | Offline

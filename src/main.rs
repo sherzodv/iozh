@@ -36,10 +36,16 @@ pub struct Structure {
 }
 
 #[derive(Debug)]
+enum ChoiceItem {
+    TypeTag(TypeTag),
+    Structure(Structure),
+}
+
+#[derive(Debug)]
 pub struct Choice {
     pos: Pos,
     name: TypeTag,
-    choices: Vec<TypeTag>,
+    choices: Vec<ChoiceItem>,
 }
 
 #[derive(Debug)]
@@ -172,9 +178,14 @@ fn parse_choice(pair: Pair<Rule>) -> Choice {
             Rule::type_tag => {
                 name = parse_type_tag(pair);
             }
+            Rule::structure => {
+                choices.push(ChoiceItem::Structure(parse_structure(pair)));
+            }
             Rule::choice_item => {
                 let mut choice_inner_items = parse_type_args(pair);
-                choices.append(choice_inner_items.as_mut());
+                for item in choice_inner_items.drain(..) {
+                    choices.push(ChoiceItem::TypeTag(item));
+                }
             }
             r => unreachable!("unhandled rule: {:?}", r),
         }
