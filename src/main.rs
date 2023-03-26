@@ -90,7 +90,7 @@ pub struct HttpRoute {
 pub struct HttpService {
     pos: Pos,
     name: TypeTag,
-    routes: Vec<HttpRoute>,   
+    routes: Vec<HttpRoute>,
 }
 
 #[derive(Debug)]
@@ -328,7 +328,9 @@ fn parse_method_ref(pair: Pair<Rule>) -> MethodRef {
         (line, col) = pair.as_span().start_pos().line_col();
         match pair.as_rule() {
             Rule::service_ref => {
-                service = parse_type_tag(pair.into_inner().next().unwrap());
+                for pp in pair.into_inner() {
+                    service = parse_type_tag(pp);
+                }
             }
             Rule::type_tag => {
                 method = parse_type_tag(pair);
@@ -407,7 +409,7 @@ fn parse_http_route(pair: Pair<Rule>) -> HttpRoute {
             }
             Rule::field => {
                 fields.push(parse_field(pair));
-            } 
+            }
             r => unreachable!("unhandled rule: {:#?}", r),
         }
     }
