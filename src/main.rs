@@ -62,7 +62,7 @@ pub struct Method {
     doc:  String,
     name: TypeTag,
     args: Vec<Field>,
-    result: TypeTag,
+    result: TypePath,
 }
 
 #[derive(Debug)]
@@ -384,10 +384,9 @@ fn parse_method(pair: Pair<Rule>) -> Method {
         args: Vec::new(),
     };
     let mut args = Vec::new();
-    let mut result = TypeTag {
+    let mut result = TypePath {
         pos: Pos { line: 0, col: 0 },
-        name: String::new(),
-        args: Vec::new(),
+        path: Vec::new(),
     };
     let (mut line, mut col) = (0, 0);
     for pair in pair.into_inner() {
@@ -404,12 +403,7 @@ fn parse_method(pair: Pair<Rule>) -> Method {
             }
             Rule::method_result => {
                 for p in pair.into_inner() {
-                    match p.as_rule() {
-                        Rule::type_tag => {
-                            result = parse_type_tag(p);
-                        }
-                        r => unreachable!("unhandled rule: {:#?}", r),
-                    }
+                    result = parse_type_path(p);
                 }
             }
             r => unreachable!("unhandled rule: {:#?}", r),

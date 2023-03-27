@@ -19,7 +19,7 @@ fields_block = _{ fields | ("{" ~ fields ~ "}") | "(" ~ fields ~ ")" }
 
 structure = { doc? ~ type_tag ~ fields_block }
 
-method_result = { type_tag }
+method_result = { type_path }
 method = { doc? ~ type_tag ~ fields_block ~ "=>" ~ method_result }
 methods = _{ (","? ~ method)+ }
 methods_block = _{ methods | ("{" ~ methods ~ "}") | "(" ~ methods ~ ")" }

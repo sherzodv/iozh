@@ -31,6 +31,7 @@ UserStatus =
 
 /* Manipulate user profiles */
 UserService
+  findById(id: I64) => core.Option[User]
   /* Find user by name */
   findByName(name: String) => List[User]
 
