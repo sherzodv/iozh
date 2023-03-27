@@ -1,37 +1,40 @@
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
-COMMENT = _{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
 
 digit = @{ ASCII_DIGIT }
 letter = @{ "_" | ASCII_ALPHA }
 identifier = @{ letter ~ (letter | digit)* }
 
+doc = { "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
 type_name = { identifier }
 field_name = { identifier }
 method_name = { identifier }
 
 type_args = { "[" ~ type_tag ~ ("," ~ type_tag)* ~ "]" }
 type_tag = { type_name ~ type_args? }
-field = { field_name ~ ":" ~ type_tag }
+type_path = { type_tag ~ ("." ~ type_tag)* }
+
+field = { doc? ~ field_name ~ ":" ~ type_path }
 fields = _{ (","? ~ field)+ }
 fields_block = _{ fields | ("{" ~ fields ~ "}") | "(" ~ fields ~ ")" }
-structure = { type_tag ~ fields_block }
+
+structure = { doc? ~ type_tag ~ fields_block }
 
 method_result = { type_tag }
-method = { type_tag ~ fields_block ~ "=>" ~ method_result }
+method = { doc? ~ type_tag ~ fields_block ~ "=>" ~ method_result }
 methods = _{ (","? ~ method)+ }
 methods_block = _{ methods | ("{" ~ methods ~ "}") | "(" ~ methods ~ ")" }
-service = { type_tag ~ methods_block }
+service = { doc? ~ type_tag ~ methods_block }
 
-choice_item = { type_tag }
-choice = { type_tag ~ "=" ~ "|"? ~ (structure | choice_item) ~ ("|" ~ (structure | choice_item))* }
+choice_name = { type_tag }
+choice_item = { (structure | (doc? ~ type_tag)) }
+choice = { doc? ~ choice_name ~ "=" ~ "|"? ~ choice_item ~ ("|" ~ choice_item)* }
 
-service_ref = { type_tag }
-method_ref = { service_ref ~ "." ~ type_tag }
+method_ref = { type_path }
 http_route_var = @{ (":" ~ identifier) | ("{" ~ identifier ~ "}") }
 http_path_part = @{ (ASCII_ALPHA | ASCII_DIGIT | "/" | "." | "-" | "_" | "~" | "!" | "$" | "&" | "'" | "(" | ")" | "+" | "," | ";" | "=" | "@" | "%")+ }
 http_route_pattern = { &"/" ~ (!"*>" ~ (http_route_var | http_path_part)+)+ }
 http_method = { "GET" | "PUT" | "POST" | "DELETE" | "OPTIONS" | "HEAD" | "PATCH" | "TRACE" | "CONNECT" }
-http_route = { http_method ~ type_tag ~ "*>" ~ http_route_pattern ~ "*>" ~ method_ref ~ fields_block }
+http_route = { http_method ~ type_path ~ "*>" ~ http_route_pattern ~ "*>" ~ method_ref ~ fields_block }
 http_routes = _{ http_route+ }
 http_routes_block = _{ http_routes | ("{" ~ http_routes ~ "}") | "(" ~ http_routes ~ ")" }
 

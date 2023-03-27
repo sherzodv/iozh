@@ -22,28 +22,36 @@ pub struct TypeTag {
     args: Vec<TypeTag>,
 }
 
+pub struct TypePath {
+    pos: Pos,
+    path: Vec<TypeTag>,
+}
+
 pub struct Field {
     pos: Pos,
+    doc: String,
     name: String,
-    type_tag: TypeTag,
+    type_path: TypePath,
 }
 
 #[derive(Debug)]
 pub struct Structure {
     pos: Pos,
+    doc: String,
     name: TypeTag,
     fields: Vec<Field>,
 }
 
-#[derive(Debug)]
 enum ChoiceItem {
-    TypeTag(TypeTag),
+    Nil,
+    TypeTag{ doc: String, choice: TypeTag },
     Structure(Structure),
 }
 
 #[derive(Debug)]
 pub struct Choice {
     pos: Pos,
+    doc: String,
     name: TypeTag,
     choices: Vec<ChoiceItem>,
 }
@@ -51,6 +59,7 @@ pub struct Choice {
 #[derive(Debug)]
 pub struct Method {
     pos: Pos,
+    doc:  String,
     name: TypeTag,
     args: Vec<Field>,
     result: TypeTag,
@@ -59,18 +68,16 @@ pub struct Method {
 #[derive(Debug)]
 pub struct Service {
     pos: Pos,
+    doc: String,
     name: TypeTag,
     methods: Vec<Method>,
 }
 
-#[derive(Debug)]
 pub struct MethodRef {
     pos: Pos,
-    service: TypeTag,
-    method: TypeTag,
+    path: Vec<TypeTag>,
 }
 
-#[derive(Debug)]
 pub struct HttpRoutePattern {
     pos: Pos,
     items: Vec<String>,
@@ -80,7 +87,7 @@ pub struct HttpRoutePattern {
 pub struct HttpRoute {
     pos: Pos,
     verb: String,
-    input: TypeTag,
+    input: TypePath,
     pattern: HttpRoutePattern,
     method: MethodRef,
     fields: Vec<Field>,
@@ -93,7 +100,6 @@ pub struct HttpService {
     routes: Vec<HttpRoute>,
 }
 
-#[derive(Debug)]
 enum ProjectItem {
     Structure(Structure),
     Choice(Choice),
@@ -115,13 +121,73 @@ impl fmt::Debug for Pos {
 
 impl fmt::Debug for TypeTag {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}{:#?}", self.name, self.args)
+        if self.args.len() > 0 {
+            let args = self.args.iter().map(|a| format!("{:#?}", a)).collect::<Vec<String>>().join(", ");
+            write!(f, "{}[{}]", self.name, args)
+        } else {
+            write!(f, "{}", self.name)
+        }
     }
 }
 
 impl fmt::Debug for Field {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}: {:#?}", self.name, self.type_tag)
+        let type_path = self.type_path.path.iter().map(|p| format!("{p:#?}")).collect::<Vec<String>>().join(".");
+        if self.doc.len() > 0 {
+            writeln!(f, "{}", self.doc)?;
+        }
+        write!(f, "{}: {:#?}", self.name, type_path)
+    }
+}
+
+impl fmt::Debug for MethodRef {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let path = self.path.iter().map(|p| format!("{p:#?}")).collect::<Vec<String>>().join(".");
+        write!(f, "{}", path)
+    }
+}
+
+impl fmt::Debug for ProjectItem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ProjectItem::Structure(s) => write!(f, "{:#?}", s),
+            ProjectItem::Choice(c) => write!(f, "{:#?}", c),
+            ProjectItem::Service(s) => write!(f, "{:#?}", s),
+            ProjectItem::HttpService(s) => write!(f, "{:#?}", s),
+        }
+    }
+}
+
+impl fmt::Debug for ChoiceItem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ChoiceItem::TypeTag{ doc, choice } => {
+                if doc.len() > 0 {
+                    writeln!(f, "{}", doc)?;
+                }
+                write!(f, "{:#?}", choice)
+            }
+            ChoiceItem::Structure(s) => {
+                write!(f, "{:#?}", s)
+            }
+            ChoiceItem::Nil => {
+                write!(f, "nil")
+            }
+        }
+    }
+}
+
+impl fmt::Debug for HttpRoutePattern {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let items = self.items.iter().map(|i| format!("{:#?}", i)).collect::<Vec<String>>().join(", ");
+        write!(f, "[{}]", items)
+    }
+}
+
+impl fmt::Debug for TypePath {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let path = self.path.iter().map(|p| format!("{p:#?}")).collect::<Vec<String>>().join(".");
+        write!(f, "{}", path)
     }
 }
 
@@ -132,7 +198,7 @@ fn parse_type_args(pair: Pair<Rule>) -> Vec<TypeTag> {
             Rule::type_tag => {
                 args.push(parse_type_tag(pair));
             }
-            x => println!("unhandled rule: {:#?}", x)
+            x => unreachable!("unhandled rule: {:#?}", x)
         }
     }
     args
@@ -151,7 +217,9 @@ fn parse_type_tag(pair: Pair<Rule>) -> TypeTag {
             Rule::type_args => {
                 args = parse_type_args(pair);
             }
-            x => println!("unhandled rule: {:#?}", x)
+            x => {
+                unreachable!("unhandled rule: {:#?}: {:#?}", x, pair);
+            }
         }
     }
     TypeTag {
@@ -161,30 +229,52 @@ fn parse_type_tag(pair: Pair<Rule>) -> TypeTag {
     }
 }
 
+fn parse_type_path(pair: Pair<Rule>) -> TypePath {
+    let (mut line, mut col) = (0, 0);
+    let mut path = Vec::new();
+    for pair in pair.into_inner() {
+        (line, col) = pair.as_span().start_pos().line_col();
+        match pair.as_rule() {
+            Rule::type_tag => {
+                path.push(parse_type_tag(pair));
+            }
+            x => println!("unhandled rule: {:#?}", x)
+        }
+    }
+    TypePath {
+        pos: Pos { line, col },
+        path,
+    }
+}
+
 fn parse_field(pair: Pair<Rule>) -> Field {
     let (mut line, mut col) = (0, 0);
+    let mut doc = String::new();
     let mut name = String::new();
-    let mut type_tag = TypeTag {
+    let mut type_path = TypePath {
         pos: Pos { line: 0, col: 0 },
-        name: String::new(),
-        args: Vec::new(),
+        path: Vec::new(),
     };
     for pair in pair.into_inner() {
         (line, col) = pair.as_span().start_pos().line_col();
         match pair.as_rule() {
+            Rule::doc => {
+                doc = pair.as_str().to_string();
+            }
             Rule::field_name => {
                 name = pair.as_str().to_string();
             }
-            Rule::type_tag => {
-                type_tag = parse_type_tag(pair);
+            Rule::type_path => {
+                type_path = parse_type_path(pair);
             }
             r => unreachable!("unhandled rule: {:#?}", r),
         }
     }
     Field {
         pos: Pos { line, col },
+        doc,
         name,
-        type_tag,
+        type_path,
     }
 }
 
@@ -194,11 +284,15 @@ fn parse_structure(pair: Pair<Rule>) -> Structure {
         name: String::new(),
         args: Vec::new(),
     };
+    let mut doc = String::new();
     let (mut line, mut col) = (0, 0);
     let mut fields = Vec::new();
     for pair in pair.into_inner() {
         (line, col) = pair.as_span().start_pos().line_col();
         match pair.as_rule() {
+            Rule::doc => {
+                doc = pair.as_str().to_string();
+            }
             Rule::type_tag => {
                 name = parse_type_tag(pair);
             }
@@ -210,12 +304,40 @@ fn parse_structure(pair: Pair<Rule>) -> Structure {
     }
     Structure {
         pos: Pos { line, col },
+        doc,
         name,
         fields,
     }
 }
 
+fn parse_choice_item (pair: Pair<Rule>) -> ChoiceItem {
+    let mut parsedDoc = String::new();
+    let mut choice = ChoiceItem::Nil;
+    for pair in pair.into_inner() {
+        match pair.as_rule() {
+            Rule::doc => {
+                parsedDoc = pair.as_str().to_string();
+            }
+            Rule::type_tag => {
+                choice = ChoiceItem::TypeTag{ doc: parsedDoc.clone(), choice: parse_type_tag(pair) };
+            }
+            Rule::structure => {
+                choice = ChoiceItem::Structure(parse_structure(pair));
+            }
+            r => unreachable!("unhandled rule: {:#?}", r),
+        }
+    }
+    match &mut choice {
+        ChoiceItem::TypeTag { doc , .. } => {
+            *doc = parsedDoc;
+        }
+        _ => {}
+    }
+    return choice;
+}
+
 fn parse_choice(pair: Pair<Rule>) -> Choice {
+    let mut doc = String::new();
     let mut name: TypeTag = TypeTag {
         pos: Pos { line: 0, col: 0 },
         name: String::new(),
@@ -227,29 +349,35 @@ fn parse_choice(pair: Pair<Rule>) -> Choice {
     for pair in pair.into_inner() {
         (line, col) = pair.as_span().start_pos().line_col();
         match pair.as_rule() {
-            Rule::type_tag => {
-                name = parse_type_tag(pair);
+            Rule::doc => {
+                doc = pair.as_str().to_string();
             }
-            Rule::structure => {
-                choices.push(ChoiceItem::Structure(parse_structure(pair)));
+            Rule::choice_name => {
+                for pp in pair.into_inner() {
+                    match pp.as_rule() {
+                        Rule::type_tag => {
+                            name = parse_type_tag(pp);
+                        }
+                        r => unreachable!("unhandled rule: {:#?}", r),
+                    }
+                }
             }
             Rule::choice_item => {
-                let mut choice_inner_items = parse_type_args(pair);
-                for item in choice_inner_items.drain(..) {
-                    choices.push(ChoiceItem::TypeTag(item));
-                }
+                choices.push(parse_choice_item(pair));
             }
             r => unreachable!("unhandled rule: {:#?}", r),
         }
     }
     Choice {
         pos: Pos { line, col },
+        doc,
         name,
         choices,
     }
 }
 
 fn parse_method(pair: Pair<Rule>) -> Method {
+    let mut doc = String::new();
     let mut name: TypeTag = TypeTag {
         pos: Pos { line: 0, col: 0 },
         name: String::new(),
@@ -265,6 +393,9 @@ fn parse_method(pair: Pair<Rule>) -> Method {
     for pair in pair.into_inner() {
         (line, col) = pair.as_span().start_pos().line_col();
         match pair.as_rule() {
+            Rule::doc => {
+                doc = pair.as_str().to_string();
+            }
             Rule::type_tag => {
                 name = parse_type_tag(pair);
             }
@@ -272,13 +403,21 @@ fn parse_method(pair: Pair<Rule>) -> Method {
                 args.push(parse_field(pair));
             }
             Rule::method_result => {
-                result = parse_type_tag(pair);
+                for p in pair.into_inner() {
+                    match p.as_rule() {
+                        Rule::type_tag => {
+                            result = parse_type_tag(p);
+                        }
+                        r => unreachable!("unhandled rule: {:#?}", r),
+                    }
+                }
             }
             r => unreachable!("unhandled rule: {:#?}", r),
         }
     }
     Method {
         pos: Pos { line, col },
+        doc,
         name,
         args,
         result,
@@ -286,6 +425,7 @@ fn parse_method(pair: Pair<Rule>) -> Method {
 }
 
 fn parse_service(pair: Pair<Rule>) -> Service {
+    let mut doc = String::new();
     let mut name: TypeTag = TypeTag {
         pos: Pos { line: 0, col: 0 },
         name: String::new(),
@@ -296,6 +436,9 @@ fn parse_service(pair: Pair<Rule>) -> Service {
     for pair in pair.into_inner() {
         (line, col) = pair.as_span().start_pos().line_col();
         match pair.as_rule() {
+            Rule::doc => {
+                doc = pair.as_str().to_string();
+            }
             Rule::type_tag => {
                 name = parse_type_tag(pair);
             }
@@ -307,41 +450,29 @@ fn parse_service(pair: Pair<Rule>) -> Service {
     }
     Service {
         pos: Pos { line, col },
+        doc,
         name,
         methods,
     }
 }
 
 fn parse_method_ref(pair: Pair<Rule>) -> MethodRef {
-    let mut service: TypeTag = TypeTag {
-        pos: Pos { line: 0, col: 0 },
-        name: String::new(),
-        args: Vec::new(),
-    };
-    let mut method: TypeTag = TypeTag {
-        pos: Pos { line: 0, col: 0 },
-        name: String::new(),
-        args: Vec::new(),
-    };
+    let mut path = Vec::new();
     let (mut line, mut col) = (0, 0);
     for pair in pair.into_inner() {
         (line, col) = pair.as_span().start_pos().line_col();
-        match pair.as_rule() {
-            Rule::service_ref => {
-                for pp in pair.into_inner() {
-                    service = parse_type_tag(pp);
+        for pp in pair.into_inner() {
+            match pp.as_rule() {
+                Rule::type_tag => {
+                    path.push(parse_type_tag(pp));
                 }
+                r => unreachable!("unhandled rule: {:#?}", r),
             }
-            Rule::type_tag => {
-                method = parse_type_tag(pair);
-            }
-            r => unreachable!("unhandled rule: {:#?}", r),
         }
     }
     MethodRef {
         pos: Pos { line, col },
-        service,
-        method,
+        path,
     }
 }
 
@@ -368,10 +499,9 @@ fn parse_http_route_pattern(pair: Pair<Rule>) -> HttpRoutePattern {
 
 fn parse_http_route(pair: Pair<Rule>) -> HttpRoute {
     let mut verb: String = String::new();
-    let mut input: TypeTag = TypeTag {
+    let mut input: TypePath = TypePath {
         pos: Pos { line: 0, col: 0 },
-        name: String::new(),
-        args: Vec::new(),
+        path: Vec::new(),
     };
     let mut pattern: HttpRoutePattern = HttpRoutePattern {
         pos: Pos { line: 0, col: 0 },
@@ -379,16 +509,7 @@ fn parse_http_route(pair: Pair<Rule>) -> HttpRoute {
     };
     let mut method: MethodRef = MethodRef {
         pos: Pos { line: 0, col: 0 },
-        service: TypeTag {
-            pos: Pos { line: 0, col: 0 },
-            name: String::new(),
-            args: Vec::new(),
-        },
-        method: TypeTag {
-            pos: Pos { line: 0, col: 0 },
-            name: String::new(),
-            args: Vec::new(),
-        },
+        path: Vec::new(),
     };
     let mut fields = Vec::new();
     let (mut line, mut col) = (0, 0);
@@ -398,8 +519,8 @@ fn parse_http_route(pair: Pair<Rule>) -> HttpRoute {
             Rule::http_method => {
                 verb = pair.as_str().to_string();
             }
-            Rule::type_tag => {
-                input = parse_type_tag(pair);
+            Rule::type_path => {
+                input = parse_type_path(pair);
             }
             Rule::http_route_pattern => {
                 pattern = parse_http_route_pattern(pair);

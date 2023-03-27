@@ -1,3 +1,6 @@
+/* 
+  User Entity
+*/
 User
   name: String
   createdAt: DateTime
@@ -6,7 +9,8 @@ User
 
 Game
   name: String
-  createdAt: DateTime
+  /* Game registered date in the system */
+  createdAt: core.DateTime
   owner: User
   players: List[User]
 
@@ -14,12 +18,20 @@ Result[A, E]
   positive: List[A]
   negative: List[E]
 
+/* 
+  User can be in one of the following states:
+  - Active
+  - Inactive
+  - Deleted
+*/
 UserStatus = 
   | Active
-  | Inactive
+  | /* User is not active, but not deleted */ Inactive
   | Deleted
 
+/* Manipulate user profiles */
 UserService
+  /* Find user by name */
   findByName(name: String) => List[User]
 
 OnlineStatus = 
