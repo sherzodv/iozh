@@ -10,7 +10,7 @@ field_name = { identifier }
 method_name = { identifier }
 
 
-string_literal = { "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
+string_literal = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
 integer_literal = { "-"? ~ digit+ }
 literal = { string_literal | integer_literal }
 
@@ -19,7 +19,8 @@ type_tag = { type_name ~ type_args? }
 type_path = { type_tag ~ ("." ~ type_tag)* }
 
 field = { doc? ~ field_name ~ ":" ~ type_path }
-fields = _{ (","? ~ field)+ }
+tag = { doc? ~ field_name ~ ":" ~ literal }
+fields = _{ (","? ~ (field | tag))+ }
 fields_block = _{ fields | ("{" ~ fields ~ "}") | "(" ~ fields ~ ")" }
 
 structure = { doc? ~ type_tag ~ fields_block }

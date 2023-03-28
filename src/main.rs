@@ -35,6 +35,12 @@ pub struct TypePath {
     path: Vec<TypeTag>,
 }
 
+pub struct Tag {
+    pos: Pos,
+    name: String,
+    value: Literal,
+}
+
 pub struct Field {
     pos: Pos,
     doc: String,
@@ -42,12 +48,17 @@ pub struct Field {
     type_path: TypePath,
 }
 
+pub enum StructItem {
+    Field(Field),
+    Tag(Tag),
+}
+
 #[derive(Debug)]
 pub struct Structure {
     pos: Pos,
     doc: String,
     name: TypeTag,
-    fields: Vec<Field>,
+    fields: Vec<StructItem>,
 }
 
 enum ChoiceItem {
@@ -139,6 +150,26 @@ impl fmt::Debug for TypeTag {
     }
 }
 
+impl fmt::Debug for Tag {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.value {
+            Literal::String(s) => write!(f, "{}: \"{}\"", self.name, s),
+            Literal::Int(i) => write!(f, "{}: {}", self.name, i),
+            Literal::Bool(b) => write!(f, "{}: {}", self.name, b),
+            Literal::Nil => write!(f, "{}: nil", self.name),
+        }
+    }
+}
+
+impl fmt::Debug for StructItem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            StructItem::Field(field) => write!(f, "{:#?}", field),
+            StructItem::Tag(t) => write!(f, "{:#?}", t),
+        }
+    }
+}
+
 impl fmt::Debug for Field {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let type_path = self.type_path.path.iter().map(|p| format!("{p:#?}")).collect::<Vec<String>>().join(".");
@@ -210,7 +241,10 @@ fn parse_literal(pair: Pair<Rule>) -> Literal {
         (line, col) = pair.as_span().start_pos().line_col();
         match pair.as_rule() {
             Rule::string_literal => {
-                lit = Literal::String(pair.as_str().to_string());
+                let s = pair.as_str().to_string();
+                println!("string literal: {}", s);
+                println!("string literal: {:#?}", pair);
+                lit = Literal::String(s);
             }
             Rule::integer_literal => {
                 lit = Literal::Int(pair.as_str().trim().parse::<i64>().expect("failed to parse integer literal"));
@@ -277,6 +311,29 @@ fn parse_type_path(pair: Pair<Rule>) -> TypePath {
     }
 }
 
+fn parse_tag(pair: Pair<Rule>) -> Tag {
+    let (mut line, mut col) = (0, 0);
+    let mut name = String::new();
+    let mut value = Literal::Nil;
+    for pair in pair.into_inner() {
+        (line, col) = pair.as_span().start_pos().line_col();
+        match pair.as_rule() {
+            Rule::field_name => {
+                name = pair.as_str().to_string();
+            }
+            Rule::literal => {
+                value = parse_literal(pair);
+            }
+            x => unreachable!("unhandled rule: {:#?}", x)
+        }
+    }
+    Tag {
+        pos: Pos { line, col },
+        name,
+        value,
+    }
+}
+
 fn parse_field(pair: Pair<Rule>) -> Field {
     let (mut line, mut col) = (0, 0);
     let mut doc = String::new();
@@ -327,7 +384,10 @@ fn parse_structure(pair: Pair<Rule>) -> Structure {
                 name = parse_type_tag(pair);
             }
             Rule::field => {
-                fields.push(parse_field(pair));
+                fields.push(StructItem::Field(parse_field(pair)));
+            }
+            Rule::tag => {
+                fields.push(StructItem::Tag(parse_tag(pair)));
             }
             r => unreachable!("unhandled rule: {:#?}", r),
         }

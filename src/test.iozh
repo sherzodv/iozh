@@ -8,6 +8,8 @@ User
   telegramName: String
 
 Game
+  tag: "game"
+  version: "1.0"
   name: String
   /* Game registered date in the system */
   createdAt: core.DateTime
