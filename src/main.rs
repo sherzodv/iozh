@@ -16,6 +16,14 @@ pub struct Pos {
     col: usize,
 }
 
+#[derive(Debug)]
+pub enum Literal {
+    String(String),
+    Int(i64),
+    Bool(bool),
+    Nil,
+}
+
 pub struct TypeTag {
     pos: Pos,
     name: String,
@@ -46,6 +54,7 @@ enum ChoiceItem {
     Nil,
     TypeTag{ doc: String, choice: TypeTag },
     Structure(Structure),
+    Value{ doc: String, name: TypeTag, value: Literal },
 }
 
 #[derive(Debug)]
@@ -170,6 +179,9 @@ impl fmt::Debug for ChoiceItem {
             ChoiceItem::Structure(s) => {
                 write!(f, "{:#?}", s)
             }
+            ChoiceItem::Value{ doc, name, value} => {
+                write!(f, "{:#?} = {:#?}", name, value)
+            }
             ChoiceItem::Nil => {
                 write!(f, "nil")
             }
@@ -189,6 +201,24 @@ impl fmt::Debug for TypePath {
         let path = self.path.iter().map(|p| format!("{p:#?}")).collect::<Vec<String>>().join(".");
         write!(f, "{}", path)
     }
+}
+
+fn parse_literal(pair: Pair<Rule>) -> Literal {
+    let (mut line, mut col) = (0, 0);
+    let mut lit = Literal::Nil;
+    for pair in pair.into_inner() {
+        (line, col) = pair.as_span().start_pos().line_col();
+        match pair.as_rule() {
+            Rule::string_literal => {
+                lit = Literal::String(pair.as_str().to_string());
+            }
+            Rule::integer_literal => {
+                lit = Literal::Int(pair.as_str().trim().parse::<i64>().expect("failed to parse integer literal"));
+            }
+            x => unreachable!("unhandled rule: {:#?}", x)
+        }
+    }
+    lit
 }
 
 fn parse_type_args(pair: Pair<Rule>) -> Vec<TypeTag> {
@@ -310,6 +340,33 @@ fn parse_structure(pair: Pair<Rule>) -> Structure {
     }
 }
 
+fn parse_choice_item_value(pair: Pair<Rule>) -> ChoiceItem {
+    let (mut line, mut col) = (0, 0);
+    let mut doc = String::new();
+    let mut name = TypeTag {
+        pos: Pos { line: 0, col: 0 },
+        name: String::new(),
+        args: Vec::new(),
+    };
+    let mut value = Literal::Nil;
+    for pair in pair.into_inner() {
+        (line, col) = pair.as_span().start_pos().line_col();
+        match pair.as_rule() {
+            Rule::doc => {
+                doc = pair.as_str().to_string();
+            }   
+            Rule::type_tag => {
+                name = parse_type_tag(pair);
+            }
+            Rule::literal => {
+                value = parse_literal(pair);
+            }
+            x => unreachable!("unhandled rule: {:#?}", x)
+        }
+    }
+    ChoiceItem::Value { doc, name, value }
+}
+
 fn parse_choice_item (pair: Pair<Rule>) -> ChoiceItem {
     let mut parsedDoc = String::new();
     let mut choice = ChoiceItem::Nil;
@@ -323,6 +380,9 @@ fn parse_choice_item (pair: Pair<Rule>) -> ChoiceItem {
             }
             Rule::structure => {
                 choice = ChoiceItem::Structure(parse_structure(pair));
+            }
+            Rule::choice_item_value => {
+                choice = parse_choice_item_value(pair);
             }
             r => unreachable!("unhandled rule: {:#?}", r),
         }

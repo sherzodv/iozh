@@ -18,6 +18,15 @@ Result[A, E]
   positive: List[A]
   negative: List[E]
 
+Emoji = 
+  | Dice        = "🎲"
+  | Darts       = "🎯"
+  | Basketball  = "🏀"
+  | Football    = "⚽"
+  | SlotMachine = "🎰"
+  | Bowling     = "🎳"
+  | One         = 1
+ 
 /* 
   User can be in one of the following states:
   - Active
