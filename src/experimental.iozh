@@ -35,3 +35,22 @@ http2 {
    status: OnlineStatus  // If params are not in the path they are tried to be parsed from query first and then from body
   GET /user/:id
 }
+
+pgsql {
+
+  User {
+    unique(id)
+    index(id, name)
+    passhash: String
+  }
+
+  Reaction {
+    userId: User(id)
+    emotionId: Emotion(id)
+  }
+
+  Message {
+    reactions: List[Reaction(id)]
+  }
+
+}
