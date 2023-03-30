@@ -1,3 +1,5 @@
+namespace users 
+
 /* 
   User Entity
 */
@@ -50,9 +52,21 @@ OnlineStatus =
   Online { since: DateTime duration: Duration  }
   | Offline ( since: DateTime , duration: Duration )
 
-GameService
-  POST User *> /user/:id *> UserService.changeStatus
-   id: I64
-   status: OnlineStatus
-  GET Boo *> /user/:id *> UserService.findById
-   id: I64
+namespace games {
+
+  namespace boo {
+    Boo
+      id: I64
+  }
+  
+  GameService
+    POST User *> /user/:id *> UserService.changeStatus
+    id: I64
+    status: OnlineStatus
+    GET Boo *> /user/:id *> UserService.findById
+    id: I64
+
+}
+
+namespace empty {
+}

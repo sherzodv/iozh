@@ -120,17 +120,25 @@ pub struct HttpService {
     routes: Vec<HttpRoute>,
 }
 
-enum ProjectItem {
+enum NspaceItem {
     Structure(Structure),
     Choice(Choice),
     Service(Service),
     HttpService(HttpService),
+    Nspace(Nspace),
+}
+
+#[derive(Debug)]
+pub struct Nspace {
+    pos: Pos,
+    name: String,
+    items: Vec<NspaceItem>,
 }
 
 #[derive(Debug)]
 pub struct Project {
     pos: Pos,
-    items: Vec<ProjectItem>,
+    namespaces: Vec<Nspace>,
 }
 
 impl fmt::Debug for Pos {
@@ -187,13 +195,14 @@ impl fmt::Debug for MethodRef {
     }
 }
 
-impl fmt::Debug for ProjectItem {
+impl fmt::Debug for NspaceItem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ProjectItem::Structure(s) => write!(f, "{:#?}", s),
-            ProjectItem::Choice(c) => write!(f, "{:#?}", c),
-            ProjectItem::Service(s) => write!(f, "{:#?}", s),
-            ProjectItem::HttpService(s) => write!(f, "{:#?}", s),
+            NspaceItem::Structure(s) => write!(f, "{:#?}", s),
+            NspaceItem::Choice(c) => write!(f, "{:#?}", c),
+            NspaceItem::Service(s) => write!(f, "{:#?}", s),
+            NspaceItem::HttpService(s) => write!(f, "{:#?}", s),
+            NspaceItem::Nspace(n) => write!(f, "{:#?}", n),
         }
     }
 }
@@ -242,8 +251,6 @@ fn parse_literal(pair: Pair<Rule>) -> Literal {
         match pair.as_rule() {
             Rule::string_literal => {
                 let s = pair.as_str().to_string();
-                println!("string literal: {}", s);
-                println!("string literal: {:#?}", pair);
                 lit = Literal::String(s);
             }
             Rule::integer_literal => {
@@ -685,26 +692,49 @@ fn parse_http_service(pair: Pair<Rule>) -> HttpService {
     }
 }
 
-fn parse_project(source: &str) -> Result<Project, Error<Rule>> {
-    let projects: Pairs<Rule> = Iozh::parse(Rule::project, source)?;
+fn parse_namespace(pair: Pair<Rule>) -> Nspace {
     let mut name = String::new();
     let (mut line, mut col) = (0, 0);
-    let mut items: Vec<ProjectItem> = Vec::new();
+    let mut items: Vec<NspaceItem> = Vec::new();
+    pair.into_inner().for_each(|entity| {
+        match entity.as_rule() {
+            Rule::nspace_name => {
+                name = entity.as_str().to_string();
+            }
+            Rule::nspace => {
+                items.push(NspaceItem::Nspace(parse_namespace(entity)));
+            }
+            Rule::structure => {
+                items.push(NspaceItem::Structure(parse_structure(entity)));
+            }
+            Rule::choice => {
+                items.push(NspaceItem::Choice(parse_choice(entity)));
+            }
+            Rule::service => {
+                items.push(NspaceItem::Service(parse_service(entity)));
+            }
+            Rule::http_service => {
+                items.push(NspaceItem::HttpService(parse_http_service(entity)));
+            }
+            r => unreachable!("unhandled rule: {:#?}", r),
+        }
+    });
+    Nspace {
+        pos: Pos { line: 0, col: 0 },
+        name,
+        items,
+    }
+}
+
+fn parse_project(source: &str) -> Result<Project, Error<Rule>> {
+    let projects: Pairs<Rule> = Iozh::parse(Rule::project, source)?;
+    let mut namespaces: Vec<Nspace> = Vec::new();
     projects.for_each(|project| {
-        let entities = project.into_inner();
-        entities.for_each(|entity| {
-            match entity.as_rule() {
-                Rule::structure => {
-                    items.push(ProjectItem::Structure(parse_structure(entity)));
-                }
-                Rule::choice => {
-                    items.push(ProjectItem::Choice(parse_choice(entity)));
-                }
-                Rule::service => {
-                    items.push(ProjectItem::Service(parse_service(entity)));
-                }
-                Rule::http_service => {
-                    items.push(ProjectItem::HttpService(parse_http_service(entity)));
+        let nss = project.into_inner();
+        nss.for_each(|ns| {
+            match ns.as_rule() {
+                Rule::nspace => {
+                    namespaces.push(parse_namespace(ns));
                 }
                 r => unreachable!("unhandled rule: {:#?}", r),
             }
@@ -712,7 +742,7 @@ fn parse_project(source: &str) -> Result<Project, Error<Rule>> {
     });
     Ok(Project {
         pos: Pos { line: 0, col: 0 },
-        items,
+        namespaces,
     })
 }
 

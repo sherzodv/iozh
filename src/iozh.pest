@@ -8,7 +8,7 @@ doc = { "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
 type_name = { identifier }
 field_name = { identifier }
 method_name = { identifier }
-
+nspace_name = { identifier }
 
 string_literal = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
 integer_literal = { "-"? ~ digit+ }
@@ -47,4 +47,8 @@ http_routes_block = _{ http_routes | ("{" ~ http_routes ~ "}") | "(" ~ http_rout
 
 http_service = { type_tag ~ http_routes_block }
 
-project = { (http_service | structure | choice | service)+ }
+nspace_item = _{ (nspace | http_service | structure | choice | service)+ }
+nspace_body = _{ nspace_item* }
+nspace = { doc? ~ "namespace" ~ nspace_name ~ (("{" ~ nspace_body ~ "}") | nspace_body) }
+
+project = { nspace+ }
