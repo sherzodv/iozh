@@ -1,6 +1,6 @@
-namespace users 
+namespace users
 
-/* 
+/*
   User Entity
 */
 User
@@ -14,7 +14,7 @@ Game
   version: "1.0"
   name: String
   /* Game registered date in the system */
-  createdAt: core.DateTime
+  createdAt: DateTime
   owner: User
   players: List[User]
 
@@ -22,7 +22,7 @@ Result[A, E]
   positive: List[A]
   negative: List[E]
 
-Emoji = 
+Emoji =
   | Dice        = "🎲"
   | Darts       = "🎯"
   | Basketball  = "🏀"
@@ -30,14 +30,14 @@ Emoji =
   | SlotMachine = "🎰"
   | Bowling     = "🎳"
   | One         = 1
- 
-/* 
+
+/*
   User can be in one of the following states:
   - Active
   - Inactive
   - Deleted
 */
-UserStatus = 
+UserStatus =
   | Active
   | /* User is not active, but not deleted */ Inactive
   | Deleted
@@ -48,9 +48,10 @@ UserService
   /* Find user by name */
   findByName(name: String) => List[User]
 
-OnlineStatus = 
+OnlineStatus =
   Online { since: DateTime duration: Duration  }
   | Offline ( since: DateTime , duration: Duration )
+  | Away
 
 namespace games {
 
@@ -58,7 +59,7 @@ namespace games {
     Boo
       id: I64
   }
-  
+
   GameService
     POST User *> /user/:id *> UserService.changeStatus
     id: I64
