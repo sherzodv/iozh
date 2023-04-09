@@ -147,6 +147,7 @@ pub fn imports_for(type_name: &str) -> Vec<String> {
         "Instant" => vec!["java.time.Instant".to_string()],
         "Duration" => vec!["scala.concurrent.duration.Duration".to_string()],
         "FiniteDuration" => vec!["scala.concurrent.duration.FiniteDuration".to_string()],
+        "File" => vec!["java.io.File".to_string()],
         _ => vec![],
     }
 }

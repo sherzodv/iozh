@@ -123,12 +123,14 @@ fn decoder_for_choice_in_nspace(c: &p::Choice, path: &str, parent: &NspaceContex
             p::ChoiceItem::Structure(_) => true,
             p::ChoiceItem::TypeTag{ doc: _, choice: _} => true,
             p::ChoiceItem::Value{doc: _, name: _, value: _ } => true,
+            p::ChoiceItem::Wrap{doc: _, name: _, field: _, target: _ } => true,
             _ => false,
         })
         .map(|x| match x {
             p::ChoiceItem::Structure(s) => s.name.name.to_ascii_lowercase(),
             p::ChoiceItem::TypeTag{ doc: _, choice } => choice.name.to_ascii_lowercase(),
             p::ChoiceItem::Value{doc: _, name, value: _ } => name.name.to_ascii_lowercase(),
+            p::ChoiceItem::Wrap{doc: _, name, field: _, target: _ } => name.name.to_ascii_lowercase(),
             _ => "ERROR_CHOICE_ITEM".to_string(),
         })
         .map(|x| {
@@ -227,28 +229,22 @@ fn encoder_for_choice_in_nspace(c: &p::Choice, path: &str, parent: &NspaceContex
             p::ChoiceItem::Structure(_) => true,
             p::ChoiceItem::TypeTag{ doc: _, choice: _} => true,
             p::ChoiceItem::Value{doc: _, name: _, value: _ } => true,
+            p::ChoiceItem::Wrap{doc: _, name: _, field: _, target: _ } => true,
             _ => false,
         })
         .map(|x| match x {
-            p::ChoiceItem::Structure(s) => {
-                if s.fields.len() > 0 {
-                    let type_args = s.fields.iter().map(|_| "_").collect::<Vec<_>>().join(",");
-                    let nn = &s.name.name;
-                    format!("{nn}({type_args})")
-                } else {
-                    s.name.name.clone()
-                }
-            }
-            p::ChoiceItem::TypeTag{ doc: _, choice } => choice.name.clone(),
-            p::ChoiceItem::Value{doc: _, name, value: _ } => name.name.clone(),
+            p::ChoiceItem::Structure(s) => s.name.name.clone(),
+            p::ChoiceItem::TypeTag{ doc: _, choice } => choice.name.clone() + ".type",
+            p::ChoiceItem::Value{doc: _, name, value: _ } => name.name.clone() + ".type",
+            p::ChoiceItem::Wrap{doc: _, name, field: _, target: _ } => name.name.clone(),
             _ => "ERROR_CHOICE_ITEM".to_string(),
         })
         .map(|x| {
             let path = &scope.base_name;
             if path.len() > 0 {
-                format!("case x @ {path}.{x} => x.asJson")
+                format!("case x: {path}.{x} => x.asJson")
             } else {
-                format!("case x @ {x} => x.asJson")
+                format!("case x: {x} => x.asJson")
             }
         })
         .collect::<Vec<_>>().join("\n");
@@ -430,7 +426,30 @@ impl CirceInChoice for p::ChoiceItem {
                     }
                 ])
             }
-            _ => GenResult::single("ERROR_CHOICE_ITEM_SHOULDNT_HAPPEN".to_string()),
+            p::ChoiceItem::Wrap { doc: _, name, field: _, target } => {
+                let type_name = &name.name;
+                let name = parent.base_name.to_string() + "." + type_name;
+                let codec_name = (parent.base_name.to_string() + &type_name).to_ascii_lowercase();
+                let target_name = &target.gen()?.to_string();
+                let mut imports: Vec<String> = vec![];
+                let decoder_body = if target_name == "File" {
+                    imports.push("java.io.File".to_string());
+                    format!("Decoder[String].map(s => {name}(new File(s)))")
+                } else {
+                    format!("Decoder[{target_name}].map({name}.apply)")
+                };
+                let decoder = format!("implicit lazy val {codec_name}Decoder: Decoder[{name}] = {decoder_body}");
+                Ok(vec![
+                    GenResult {
+                        file: None,
+                        content: decoder,
+                        imports: imports,
+                        package: vec![],
+                        block: None,
+                    }
+                ])
+            }
+            p::ChoiceItem::Nil => GenResult::single("ERROR_CHOICE_ITEM_SHOULDNT_HAPPEN".to_string()),
         }
     }
 
@@ -479,7 +498,28 @@ impl CirceInChoice for p::ChoiceItem {
                     }
                 ])
             }
-            _ => GenResult::single("ERROR_CHOICE_ITEM_SHOULDNT_HAPPEN".to_string()),
+            p::ChoiceItem::Wrap{doc: _, name, field, target } => {
+                let type_name = &name.name;
+                let name = parent.base_name.to_string() + "." + type_name;
+                let codec_name = (parent.base_name.to_string() + &type_name).to_ascii_lowercase();
+                let target_name = &target.gen()?.to_string();
+                let encoder_body = if target_name == "File" {
+                    format!("(x: {name}) => x.{field}.getName.asJson")
+                } else {
+                    format!("(x: {name}) => x.{field}.asJson")
+                };
+                let encoder = format!("implicit lazy val {codec_name}Encoder: Encoder[{name}] = {encoder_body}");
+                Ok(vec![
+                    GenResult {
+                        file: None,
+                        content: encoder,
+                        imports: vec![],
+                        package: vec![],
+                        block: None,
+                    }
+                ])
+            }
+            p::ChoiceItem::Nil => GenResult::single("ERROR_CHOICE_ITEM_SHOULDNT_HAPPEN".to_string()),
         }
     }
 }
@@ -499,6 +539,7 @@ impl CirceInNspace for p::Choice {
                 p::ChoiceItem::Structure(_) => true,
                 p::ChoiceItem::TypeTag{ doc: _, choice: _} => true,
                 p::ChoiceItem::Value{doc: _, name: _, value: _ } => true,
+                p::ChoiceItem::Wrap{doc: _, name: _, field: _, target: _ } => true,
                 _ => false,
             })
             .map(|x| x.decoder_in_choice(&scope))
@@ -518,6 +559,7 @@ impl CirceInNspace for p::Choice {
                 p::ChoiceItem::Structure(_) => true,
                 p::ChoiceItem::TypeTag{ doc: _, choice: _} => true,
                 p::ChoiceItem::Value{doc: _, name: _, value: _ } => true,
+                p::ChoiceItem::Wrap{doc: _, name: _, field: _, target: _ } => true,
                 _ => false,
             })
             .map(|x| x.encoder_in_choice(&scope))

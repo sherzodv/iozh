@@ -62,6 +62,7 @@ pub enum ChoiceItem {
     TypeTag{ doc: String, choice: TypeTag },
     Structure(Structure),
     Value{ doc: String, name: TypeTag, value: Literal },
+    Wrap{ doc: String, name: TypeTag, field: String, target: TypePath },
 }
 
 #[derive(Debug)]
@@ -219,6 +220,12 @@ impl fmt::Debug for ChoiceItem {
             }
             ChoiceItem::Nil => {
                 write!(f, "nil")
+            }
+            ChoiceItem::Wrap { doc, name, field, target } => {
+                if doc.len() > 0 {
+                    writeln!(f, "{}", doc)?;
+                }
+                write!(f, "{:#?}({:#?}) = {:#?}", name, field, target)
             }
         }
     }
@@ -428,6 +435,38 @@ fn parse_choice_item_value(pair: Pair<Rule>) -> ChoiceItem {
     ChoiceItem::Value { doc, name, value }
 }
 
+fn parse_choice_item_wrap(pair: Pair<Rule>) -> ChoiceItem {
+    let mut doc = String::new();
+    let mut name = TypeTag {
+        pos: Pos { line: 0, col: 0 },
+        name: String::new(),
+        args: Vec::new(),
+    };
+    let mut field = String::new();
+    let mut target = TypePath {
+        pos: Pos { line: 0, col: 0 },
+        path: Vec::new(),
+    };
+    for pair in pair.into_inner() {
+        match pair.as_rule() {
+            Rule::doc => {
+                doc = pair.as_str().to_string();
+            }
+            Rule::type_tag => {
+                name = parse_type_tag(pair);
+            }
+            Rule::type_name => {
+                field = pair.as_str().to_string();
+            }
+            Rule::type_path => {
+                target = parse_type_path(pair);
+            }
+            x => unreachable!("unhandled rule: {:#?}", x)
+        }
+    }
+    ChoiceItem::Wrap { doc, name, field, target }
+}
+
 fn parse_choice_item (pair: Pair<Rule>) -> ChoiceItem {
     let mut parsed_doc = String::new();
     let mut choice = ChoiceItem::Nil;
@@ -444,6 +483,9 @@ fn parse_choice_item (pair: Pair<Rule>) -> ChoiceItem {
             }
             Rule::choice_item_value => {
                 choice = parse_choice_item_value(pair);
+            }
+            Rule::choice_item_wrap => {
+                choice = parse_choice_item_wrap(pair);
             }
             r => unreachable!("unhandled rule: {:#?}", r),
         }

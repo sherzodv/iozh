@@ -9,6 +9,10 @@ User
   telegramId: I64
   telegramName: String
 
+ChatId =
+  | ChatIntId (id) = Long
+  | ChatStrId (id) = String
+
 Game
   tag: "game"
   version: "1.0"
@@ -17,6 +21,10 @@ Game
   createdAt: DateTime
   owner: User
   players: List[User]
+
+IFile =
+  | InputPartFile (file) = File
+  | InputLinkFile (file) = String
 
 Result[A, E]
   positive: List[A]

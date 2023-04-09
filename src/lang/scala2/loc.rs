@@ -33,6 +33,7 @@ impl Loc for p::ChoiceItem {
             p::ChoiceItem::TypeTag { doc: _, choice } => choice.get_pos(),
             p::ChoiceItem::Value { doc: _, name, value: _ } => name.get_pos(),
             p::ChoiceItem::Nil => p::Pos{ line: 0, col: 0 },
+            p::ChoiceItem::Wrap { doc: _, name: _, field: _, target: _ } => p::Pos{ line: 0, col: 0 }
         }
     }
 }

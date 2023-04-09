@@ -160,6 +160,18 @@ impl InChoice for p::ChoiceItem {
                 let value_content = value.gen_in_choice(&parent)?.into_iter().map(|c| c.content).collect::<Vec<_>>().join("\n");
                 GenResult::single(format!("case object {} extends {} {{\n{}\n}}", name_content, parent.base_name, value_content))
             }
+            p::ChoiceItem::Wrap { doc: _, name, field, target } => {
+                let nn = &name.name;
+                let targetn = target.gen()?.to_string();
+                let content = format!("case class {nn}({field}: {targetn}) extends {}", parent.base_name);
+                Ok(vec![GenResult {
+                    file: None,
+                    content: content,
+                    imports: imports_for(&targetn),
+                    package: vec![],
+                    block: None,
+                }])
+            }
             p::ChoiceItem::Nil => GenResult::single("".to_string()),
         }
     }
@@ -175,6 +187,7 @@ impl InNspace for p::Choice {
                 p::ChoiceItem::Structure(_) => true,
                 p::ChoiceItem::Value { doc: _, name: _, value: _ } => true,
                 p::ChoiceItem::TypeTag { doc: _, choice: _ } => true,
+                p::ChoiceItem::Wrap { doc: _, name: _, field: _, target: _ } => true,
                 p::ChoiceItem::Nil => false,
             })
             .map(|x| x.gen_in_choice(&scope))

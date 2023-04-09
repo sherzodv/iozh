@@ -33,7 +33,8 @@ service = { doc? ~ type_tag ~ methods_block }
 
 choice_name = { type_tag }
 choice_item_value = { doc? ~ type_tag ~ "=" ~ literal }
-choice_item = { (structure | choice_item_value | (doc? ~ type_tag)) }
+choice_item_wrap = { doc? ~ type_tag ~ "(" ~ type_name ~ ")" ~ "=" ~ type_path }
+choice_item = { (structure | choice_item_value | choice_item_wrap | (doc? ~ type_tag)) }
 choice = { doc? ~ choice_name ~ "=" ~ "|"? ~ choice_item ~ ("|" ~ choice_item)* }
 
 method_ref = { type_path }
