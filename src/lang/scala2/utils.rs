@@ -49,6 +49,7 @@ impl GenResult {
                 content: content,
                 imports: vec![],
                 package: vec![],
+                block: None,
             }
         ])
     }
@@ -87,15 +88,16 @@ impl FileWriter for std::fs::File {
 }
 
 pub fn group(items: Vec<GenResult>) -> Vec<GenResult> {
-    let mut m = HashMap::<PathBuf, GenResult>::new();
+    let mut m = HashMap::<String, GenResult>::new();
     for mut item in items {
-        if let Some(file_path) = item.file.clone() {
-            if let Some(existing) = m.get_mut(&file_path) {
-                existing.content.push_str(&item.content);
-                existing.imports.append(&mut item.imports);
-            } else {
-                m.insert(file_path, item);
-            }
+        let mut key: String = item.file.iter().map(|x| x.to_string_lossy().to_string()).join("");
+        key.push_str(&item.block.iter().map(|x| x.to_string()).join(""));
+        if let Some(existing) = m.get_mut(&key) {
+            existing.content.push_str("\n");
+            existing.content.push_str(&item.content);
+            existing.imports.append(&mut item.imports);
+        } else {
+            m.insert(key, item);
         }
     }
     m.into_iter()
@@ -128,7 +130,13 @@ pub fn write_fs_tree(items: Vec<GenResult>, project: &ProjectContext) -> std::re
                 }
                 file.ln()?;
             }
-            file.put(&item.content)?;
+            if let Some(block) = &item.block {
+                file.putln(&format!("{block} {{"))?;
+                file.putln(&item.content)?;
+                file.putln(&format!("}}"))?;
+            } else {
+                file.put(&item.content)?;
+            }
         }
     }
     Ok(())
@@ -138,6 +146,7 @@ pub fn imports_for(type_name: &str) -> Vec<String> {
     match type_name {
         "Instant" => vec!["java.time.Instant".to_string()],
         "Duration" => vec!["scala.concurrent.duration.Duration".to_string()],
+        "FiniteDuration" => vec!["scala.concurrent.duration.FiniteDuration".to_string()],
         _ => vec![],
     }
 }
@@ -150,6 +159,7 @@ pub fn map_type(name: &str) -> &str {
         "F64" => "Double",
         "Bool" => "Boolean",
         "DateTime" => "Instant",
+        "Duration" => "Duration",
         x => x,
     }
 }

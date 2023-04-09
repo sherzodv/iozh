@@ -5,6 +5,7 @@ edition = "2018"
 
 [dependencies]
 itertools = "0.10.5"
+stripmargin = "0.1.1"
 quote = "1.0.26"
 clap = { version = "4.2.1", features = ["derive"] }
 pest = "2.5.5"

@@ -1,6 +1,7 @@
 use crate::parser as p;
 use crate::lang::scala2::*;
 use crate::lang::scala2::utils::*;
+use crate::lang::scala2::gen_circe::*;
 
 impl ProjectContext {
     pub fn push_nspace(&self, nspace: &p::Nspace) -> NspaceContext {
@@ -29,10 +30,12 @@ impl NspaceContext {
     pub fn push_struct(&self, s: &p::Structure) -> std::result::Result<StructContext, IozhError> {
         let base_name = sanitize(&s.name.name);
         let full_type_name = s.name.gen()?.to_string();
+        let type_args = gen_type_args(&s.name.args)?;
         Ok(StructContext {
             nspace: self.clone(),
             base_name,
             full_type_name,
+            type_args: type_args,
         })
     }
     pub fn push_choice(&self, c: &p::Choice) -> std::result::Result<ChoiceContext, IozhError> {
@@ -68,10 +71,12 @@ impl ChoiceContext {
     pub fn push_struct(&self, s: &p::Structure) -> std::result::Result<StructContext, IozhError> {
         let base_name = sanitize(&s.name.name);
         let full_type_name = s.name.gen()?.to_string();
+        let type_args = gen_type_args(&s.name.args)?;
         Ok(StructContext {
             nspace: self.nspace.clone(),
             base_name,
             full_type_name,
+            type_args,
         })
     }
 }
@@ -84,6 +89,16 @@ impl ServiceContext {
             name: method_name,
         }
     }
+}
+
+fn gen_type_args(type_args: &Vec<p::TypeTag>) -> std::result::Result<Vec<String>, IozhError> {
+    Ok(type_args
+        .iter()
+        .map(|x| x.gen())
+        .collect::<Result<Vec<Vec<GenResult>>, IozhError>>()
+        .map(|vec| vec.into_iter().flatten())?
+        .map(|m| m.content)
+        .collect::<Vec<_>>())
 }
 
 impl Gen for p::Literal {
@@ -108,14 +123,7 @@ impl InChoice for p::Literal {
 
 impl Gen for p::TypeTag {
     fn gen(&self) -> std::result::Result<Vec<GenResult>, IozhError> {
-        let args = self
-            .args
-            .iter()
-            .map(|x| x.gen())
-            .collect::<Result<Vec<Vec<GenResult>>, IozhError>>()
-            .map(|vec| vec.into_iter().flatten())?
-            .map(|m| m.content)
-            .collect::<Vec<_>>().join(",");
+        let args = gen_type_args(&self.args)?.join(",");
         let name = map_type(sanitize(&self.name).as_str()).to_string();
         if args.len() == 0 {
             GenResult::single(format!("{}", name))
@@ -186,14 +194,18 @@ impl InNspace for p::Choice {
         let body = format!("object {} {{ {} }}", scope.base_name, items);
         let file_name = gen_filename(&scope.base_name);
         let file_path = parent.folder.join(file_name);
-        Ok(vec![
+        let mut circe_codecs = self.codec_in_nspace(parent)?;
+        circe_codecs.iter_mut().for_each(|m| m.imports.append(&mut imports.clone()));
+        circe_codecs.push(
             GenResult {
                 file: Some(file_path),
                 content: format!("{}\n{}", header, body),
                 imports: imports,
                 package: scope.nspace.path,
+                block: None,
             }
-        ])
+        );
+        Ok(circe_codecs)
     }
 }
 
@@ -206,6 +218,7 @@ impl InStruct for p::Field {
                 content: format!("{}: {}", self.name, tp),
                 imports: imports_for(&tp),
                 package: vec![],
+                block: None,
             }
         ])
     }
@@ -256,6 +269,7 @@ impl InChoice for p::Structure {
                 content: format!("case class {}({fields}) extends {}", scope.full_type_name, parent.full_type_name),
                 imports: imports,
                 package: scope.nspace.path,
+                block: None,
             }
         ])
     }
@@ -286,14 +300,18 @@ impl InNspace for p::Structure {
             .collect::<Vec<_>>().join(",");
         let file_name = gen_filename(&scope.base_name);
         let file_path = parent.folder.join(file_name);
-        Ok(vec![
+        let mut circe_codecs = self.codec_in_nspace(parent)?;
+        circe_codecs.iter_mut().for_each(|m| m.imports.append(&mut imports.clone()));
+        circe_codecs.push(
             GenResult {
                 file: Some(file_path),
                 content: format!("case class {}({fields})", scope.full_type_name),
                 imports: imports,
                 package: scope.nspace.path,
+                block: None,
             }
-        ])
+        );
+        Ok(circe_codecs)
     }
 }
 
@@ -396,12 +414,14 @@ impl p::Project {
         let scope = ProjectContext {
             target_folder: target_folder.to_path_buf(),
         };
-        let items = self.nspaces
+        let mut items = self.nspaces
             .iter()
             .map(|ns| ns.gen_in_project(&scope))
             .collect::<Result<Vec<Vec<GenResult>>, IozhError>>()
             .map(|vec| vec.into_iter().flatten())?
             .collect::<Vec<_>>();
+        let mut circe_items = circe_pack(&scope)?;
+        items.append(&mut circe_items);
         write_fs_tree(items, &scope)
     }
 }

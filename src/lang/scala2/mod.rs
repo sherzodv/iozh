@@ -1,6 +1,7 @@
 mod utils;
 mod loc;
 pub mod gen;
+pub mod gen_circe;
 
 use std::path::PathBuf;
 use crate::parser as p;
@@ -23,6 +24,7 @@ pub struct StructContext {
     pub nspace: NspaceContext,
     pub base_name: String,
     pub full_type_name: String,
+    pub type_args: Vec<String>,
 }
 
 pub struct ChoiceContext {
@@ -60,6 +62,7 @@ pub struct GenResult {
     content: String,
     imports: Vec<String>,
     package: Vec<String>,
+    block: Option<String>,
 }
 
 pub trait Gen where Self: Loc, Self: std::fmt::Debug {
@@ -72,6 +75,22 @@ pub trait InProject where Self: Loc, Self: std::fmt::Debug {
 
 pub trait InNspace where Self: Loc, Self: std::fmt::Debug {
     fn gen_in_nspace(&self, parent: &NspaceContext) -> std::result::Result<Vec<GenResult>, IozhError>;
+}
+
+pub trait CirceInNspace where Self: Loc, Self: std::fmt::Debug {
+    fn decoder_in_nspace(&self, parent: &NspaceContext) -> std::result::Result<Vec<GenResult>, IozhError>;
+    fn encoder_in_nspace(&self, parent: &NspaceContext) -> std::result::Result<Vec<GenResult>, IozhError>;
+    fn codec_in_nspace(&self, parent: &NspaceContext) -> std::result::Result<Vec<GenResult>, IozhError>;
+}
+
+pub trait CirceInStruct where Self: Loc, Self: std::fmt::Debug {
+    fn decoder_in_struct(&self, parent: &StructContext) -> std::result::Result<Vec<GenResult>, IozhError>;
+    fn encoder_in_struct(&self, parent: &StructContext) -> std::result::Result<Vec<GenResult>, IozhError>;
+}
+
+pub trait CirceInChoice where Self: Loc, Self: std::fmt::Debug {
+    fn decoder_in_choice(&self, parent: &ChoiceContext) -> std::result::Result<Vec<GenResult>, IozhError>;
+    fn encoder_in_choice(&self, parent: &ChoiceContext) -> std::result::Result<Vec<GenResult>, IozhError>;
 }
 
 pub trait InStruct where Self: Loc, Self: std::fmt::Debug {
