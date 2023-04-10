@@ -1,4 +1,5 @@
 use core::fmt;
+use itertools::Itertools;
 use pest::Parser;
 use pest::error::Error;
 use pest::iterators::{Pair, Pairs};
@@ -13,7 +14,7 @@ pub struct Pos {
     pub col: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Literal {
     String{ pos: Pos, value: String },
     Int{ pos: Pos, value: i64 },
@@ -31,6 +32,7 @@ pub struct TypePath {
     pub path: Vec<TypeTag>,
 }
 
+#[derive(Clone)]
 pub struct Tag {
     pub pos: Pos,
     pub name: String,
@@ -136,6 +138,74 @@ pub struct Nspace {
 pub struct Project {
     pub pos: Pos,
     pub nspaces: Vec<Nspace>,
+}
+
+impl Tag {
+    pub fn get_value_as_str(&self) -> String {
+        match &self.value {
+            Literal::String{ pos: _, value } => value.clone(),
+            Literal::Int{ pos: _, value } => value.to_string(),
+            Literal::Nil => "nil".to_string(),
+        }
+    }
+}
+
+impl ChoiceItem {
+    pub fn get_tag_value(&self, tag: &str) -> String {
+        match self {
+            ChoiceItem::Structure(s) => {
+                if let Some(tag_val) = s.get_tag(tag).map(|t| t.get_value_as_str()) {
+                    tag_val
+                } else {
+                    s.name.name.clone()
+                }
+            }
+            _ => "WRONG_PLACE_TO_USE_TAG".to_string()
+        }
+    }
+    pub fn get_tags(&self) -> Vec<Tag> {
+        match self {
+            ChoiceItem::Structure(s) => s.get_tags(),
+            _ => vec![],
+        }
+    }
+}
+
+impl Choice {
+    pub fn get_most_common_tag_key(&self) -> Option<String> {
+        let counts = self.choices
+            .iter()
+            .map(|c| c.get_tags())
+            .flatten()
+            .map(|t| t.name)
+            .sorted()
+            .counts();
+        if counts.len() > 0 {
+            counts.iter()
+                .max_by_key(|(_, count)| *count)
+                .map(|(name, _)| name.clone())
+        } else {
+            None
+        }
+    }
+}
+
+impl Structure {
+    fn get_tag(&self, tag: &str) -> Option<Tag> {
+        self.fields.iter().find_map(|field| match field {
+            StructItem::Tag(t) if t.name == tag => Some(t.clone()),
+            _ => None,
+        })
+    }
+    fn get_tags(&self) -> Vec<Tag> {
+        self.fields
+            .iter()
+            .filter_map(|field| match field {
+                StructItem::Tag(t) => Some(t.clone()),
+                _ => None,
+            })
+            .collect::<Vec<Tag>>()
+    }
 }
 
 impl fmt::Debug for Pos {

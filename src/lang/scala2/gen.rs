@@ -41,10 +41,12 @@ impl NspaceContext {
     pub fn push_choice(&self, c: &p::Choice) -> std::result::Result<ChoiceContext, IozhError> {
         let base_name = sanitize(&c.name.name);
         let full_type_name = c.name.gen()?.to_string();
+        let tag_opt = c.get_most_common_tag_key();
         Ok(ChoiceContext {
             nspace: self.clone(),
             base_name,
             full_type_name,
+            most_common_tag_key: tag_opt,
         })
     }
     pub fn push_service(&self, s: &p::Service) -> std::result::Result<ServiceContext, IozhError> {

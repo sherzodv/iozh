@@ -117,7 +117,7 @@ fn decoder_for_choice_in_nspace(c: &p::Choice, path: &str, parent: &NspaceContex
     };
     let decoder_name = name.replace(".", "").to_ascii_lowercase();
     let postfix = if c.choices.is_empty() { ".type" } else { "" };
-    let decoder_items = c.choices
+    let items = c.choices
         .iter()
         .filter(|x| match x {
             p::ChoiceItem::Structure(_) => true,
@@ -126,26 +126,47 @@ fn decoder_for_choice_in_nspace(c: &p::Choice, path: &str, parent: &NspaceContex
             p::ChoiceItem::Wrap{doc: _, name: _, field: _, target: _ } => true,
             _ => false,
         })
-        .map(|x| match x {
-            p::ChoiceItem::Structure(s) => s.name.name.to_ascii_lowercase(),
-            p::ChoiceItem::TypeTag{ doc: _, choice } => choice.name.to_ascii_lowercase(),
-            p::ChoiceItem::Value{doc: _, name, value: _ } => name.name.to_ascii_lowercase(),
-            p::ChoiceItem::Wrap{doc: _, name, field: _, target: _ } => name.name.to_ascii_lowercase(),
-            _ => "ERROR_CHOICE_ITEM".to_string(),
-        })
         .map(|x| {
-            let path = &scope.base_name.to_lowercase();
-            if path.len() > 0 {
-                format!("{path}{x}Decoder.widen", path = path, x = x)
+            let type_name = match x {
+                p::ChoiceItem::Structure(s) => s.name.name.clone(),
+                p::ChoiceItem::TypeTag{ doc: _, choice } => choice.name.clone(),
+                p::ChoiceItem::Value{doc: _, name, value: _ } => name.name.clone(),
+                p::ChoiceItem::Wrap{doc: _, name, field: _, target: _ } => name.name.clone(),
+                _ => "ERROR_CHOICE_ITEM".to_string(),
+            };
+            (x, type_name)
+        })
+        .map(|(x, type_name)| {
+            if let Some(tag_key) = &scope.most_common_tag_key {
+                let path = &scope.base_name;
+                let name = format!("{path}.{type_name}");
+                let tag_value = x.get_tag_value(tag_key);
+                format!(r#"case {tag_value} => Decoder[{name}]"#)
             } else {
-                format!("{x}Decoder.widen", x = x)
+                let path = &scope.base_name;
+                let name = format!("{path}{type_name}").to_ascii_lowercase();
+                format!("{name}Decoder.widen")
             }
         })
-        .collect::<Vec<_>>().join(",\n");
-    let decoder_body = format!(r#"
-        |List[Decoder[{name}]](
-        |{decoder_items}
-        |).reduceLeft(_ or _)"#).strip_margin();
+        .collect::<Vec<_>>();
+
+    let decoder_body = if let Some(tag_key) = &scope.most_common_tag_key {
+        let decoder_items = items.join("\n");
+        format!(r#"
+            |for {{
+            |  fType <- Decoder[String].prepare(_.downField("{tag_key}"))
+            |  value <- fType match {{
+            |    {decoder_items}
+            |  }}
+            |}} yield value
+            "#).strip_margin()
+    } else {
+        let decoder_items = items.join(",\n");
+        format!(r#"
+            |List[Decoder[{name}]](
+            |{decoder_items}
+            |).reduceLeft(_ or _)"#).strip_margin()
+    };
     let decoder = format!("implicit lazy val {decoder_name}Decoder: Decoder[{name}{postfix}] = {decoder_body}");
     Ok(vec![
         GenResult {
@@ -232,19 +253,28 @@ fn encoder_for_choice_in_nspace(c: &p::Choice, path: &str, parent: &NspaceContex
             p::ChoiceItem::Wrap{doc: _, name: _, field: _, target: _ } => true,
             _ => false,
         })
-        .map(|x| match x {
-            p::ChoiceItem::Structure(s) => s.name.name.clone(),
-            p::ChoiceItem::TypeTag{ doc: _, choice } => choice.name.clone() + ".type",
-            p::ChoiceItem::Value{doc: _, name, value: _ } => name.name.clone() + ".type",
-            p::ChoiceItem::Wrap{doc: _, name, field: _, target: _ } => name.name.clone(),
-            _ => "ERROR_CHOICE_ITEM".to_string(),
-        })
         .map(|x| {
+            let nn = match x {
+                p::ChoiceItem::Structure(s) => s.name.name.clone(),
+                p::ChoiceItem::TypeTag{ doc: _, choice } => choice.name.clone() + ".type",
+                p::ChoiceItem::Value{doc: _, name, value: _ } => name.name.clone() + ".type",
+                p::ChoiceItem::Wrap{doc: _, name, field: _, target: _ } => name.name.clone(),
+                _ => "ERROR_CHOICE_ITEM".to_string(),
+            };
+            (x, nn)
+        })
+        .map(|(x, type_name)| {
             let path = &scope.base_name;
-            if path.len() > 0 {
-                format!("case x: {path}.{x} => x.asJson")
+            let postfix = if let Some(tag_key) = &scope.most_common_tag_key {
+                let tag_value = x.get_tag_value(tag_key);
+                format!(r#".mapObject(_.add("{tag_key}", Json.fromString({tag_value})))"#)
             } else {
-                format!("case x: {x} => x.asJson")
+                "".to_string()
+            };
+            if path.len() > 0 {
+                format!("case x: {path}.{type_name} => x.asJson{postfix}")
+            } else {
+                format!("case x: {type_name} => x.asJson{postfix}")
             }
         })
         .collect::<Vec<_>>().join("\n");

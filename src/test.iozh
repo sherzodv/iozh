@@ -13,6 +13,11 @@ ChatId =
   | ChatIntId (id) = Long
   | ChatStrId (id) = String
 
+Shape =
+  | Circle shape: "circle" radius: I64
+  | Rectangle shape: "rect" width: I64, height: I64
+  | Square shape: "square" side: I64
+
 Game
   tag: "game"
   version: "1.0"

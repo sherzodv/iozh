@@ -31,6 +31,7 @@ pub struct ChoiceContext {
     nspace: NspaceContext,
     base_name: String,
     full_type_name: String,
+    most_common_tag_key: Option<String>,
 }
 
 #[derive(Debug, Clone)]
