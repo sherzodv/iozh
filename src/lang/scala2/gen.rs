@@ -350,17 +350,34 @@ impl InService for p::Method {
 impl InNspace for p::Service {
     fn gen_in_nspace(&self, parent: &NspaceContext) -> std::result::Result<Vec<GenResult>, IozhError> {
         let scope = parent.push_service(self)?;
-        let methods = self
+        let methods_results = self
             .methods
             .iter()
             .map(|x| x.gen_in_service(&scope))
             .collect::<Result<Vec<Vec<GenResult>>, IozhError>>()
             .map(|vec| vec.into_iter().flatten())?
-            .map(|m| m.content)
+            .collect::<Vec<_>>();
+        let imports = methods_results
+            .iter()
+            .map(|m| m.imports.clone())
+            .flatten()
+            .collect::<Vec<_>>();
+        let methods = methods_results
+            .iter()
+            .map(|m| m.content.clone())
             .collect::<Vec<_>>().join("\n");
-        let header = format!("trait {}", scope.full_type_name);
-        let body = format!("object {} {{ {} }}", scope.base_name, methods);
-        GenResult::single(format!("{}\n{}", header, body))
+        let content = format!("trait {} {{\n{}\n}}", scope.full_type_name, methods);
+        let file_name = gen_filename(&scope.base_name);
+        let file_path = parent.folder.join(file_name);
+        Ok(vec![
+            GenResult {
+                file: Some(file_path),
+                content: content,
+                imports: imports,
+                package: scope.nspace.path,
+                block: None,
+            }
+        ])
     }
 }
 

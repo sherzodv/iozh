@@ -1,33 +1,5 @@
 namespace Users
 
-User
-  name: String
-  createdAt: DateTime
-
-  telegramId: I64
-  telegramName: String
-
-OnlineStatus
-  Online |
-  Away { since: DateTime } |
-  Offline
-
-Emotion
-  name: String
-  code: I64
-
-Reaction
-  userId: I64
-  emotionId: I64
-  reactedAt: DateTime
-
-Message
-  name: String
-  reactions: List[Reaction]
-
-UserService
-  findByName(name: String) => List[User]
-
 http2 {
   REST Game // generates standard CRUD routes for Game entity
   POST User *> /user/{id} *> UserService.findByName
