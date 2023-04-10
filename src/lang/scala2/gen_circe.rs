@@ -1,6 +1,7 @@
 use crate::parser as p;
 use crate::lang::scala2::*;
 use crate::lang::scala2::utils::*;
+use crate::lang::scala2::gen::*;
 
 use stripmargin::StripMargin;
 
@@ -50,17 +51,8 @@ fn decoder_for_struct_in_nspace(s: &p::Structure, path: &str, parent: &NspaceCon
     };
     let decoder_name = name.replace(".", "").to_ascii_lowercase();
     let postfix = if s.fields.is_empty() { ".type" } else { "" };
-    let fields_decoders = s.fields
-        .iter()
-        .map(|x| x.decoder_in_struct(&scope))
-        .collect::<Result<Vec<Vec<GenResult>>, IozhError>>()
-        .map(|vec| vec.into_iter().flatten())?
-        .collect::<Vec<_>>();
-    let decoder_fields_parse = fields_decoders
-        .iter()
-        .map(|d| d.content.clone())
-        .collect::<Vec<_>>()
-        .join("\n");
+    let fields_decoders = s.fields.mapg(|x| x.decoder_in_struct(&scope))?;
+    let decoder_fields_parse = fields_decoders.map_content().join("\n");
     let decoder_fields_list = s.fields
         .iter()
         .filter(|x| match x {
@@ -96,7 +88,7 @@ fn decoder_for_struct_in_nspace(s: &p::Structure, path: &str, parent: &NspaceCon
     } else {
         format!("implicit lazy val {decoder_name}Decoder: Decoder[{name}{postfix}] = {decoder_body}")
     };
-    let fields_imports = fields_decoders.iter().map(|f| f.imports.clone()).flatten().collect::<Vec<_>>();
+    let fields_imports = fields_decoders.map_imports();
     Ok(vec![
         GenResult {
             file: None,
@@ -189,16 +181,8 @@ fn encoder_for_struct_in_nspace(s: &p::Structure, path: &str, parent: &NspaceCon
     let encoder_name = name.replace(".", "").to_ascii_lowercase();
     let postfix = if s.fields.is_empty() { ".type" } else { "" };
     let fields_encoders = s.fields
-        .iter()
-        .map(|x| x.encoder_in_struct(&scope))
-        .collect::<Result<Vec<Vec<GenResult>>, IozhError>>()
-        .map(|vec| vec.into_iter().flatten())?
-        .collect::<Vec<_>>();
-    let encoder_fields_parse = fields_encoders
-        .iter()
-        .map(|d| d.content.clone())
-        .collect::<Vec<_>>()
-        .join(",\n");
+        .mapg(|x| x.encoder_in_struct(&scope))?;
+    let encoder_fields_parse = fields_encoders.map_content().join(",\n");
     let type_bounds = scope.type_args.join(": Encoder, ") + ": Encoder";
     let type_args = scope.type_args.join(",");
     let type_args_opt = if type_args.len() > 0 {
@@ -223,7 +207,7 @@ fn encoder_for_struct_in_nspace(s: &p::Structure, path: &str, parent: &NspaceCon
     } else {
         format!("implicit lazy val {encoder_name}encoder: Encoder[{name}{postfix}] = {encoder_body}")
     };
-    let fields_imports = fields_encoders.iter().map(|f| f.imports.clone()).flatten().collect::<Vec<_>>();
+    let fields_imports = fields_encoders.map_imports();
     Ok(vec![
         GenResult {
             file: None,
@@ -564,18 +548,13 @@ impl CirceInNspace for p::Choice {
         let content = format!("{decoder}\n{encoder}\n");
         let file_path = parent.folder.join("package.scala");
         let mut items_decoders = self.choices
-            .iter()
-            .filter(|x| match x {
+            .filter_gen(|x| match x {
                 p::ChoiceItem::Structure(_) => true,
                 p::ChoiceItem::TypeTag{ doc: _, choice: _} => true,
                 p::ChoiceItem::Value{doc: _, name: _, value: _ } => true,
                 p::ChoiceItem::Wrap{doc: _, name: _, field: _, target: _ } => true,
                 _ => false,
-            })
-            .map(|x| x.decoder_in_choice(&scope))
-            .collect::<Result<Vec<Vec<GenResult>>, IozhError>>()
-            .map(|vec| vec.into_iter().flatten())?
-            .collect::<Vec<_>>();
+            }, |x| x.decoder_in_choice(&scope))?;
         items_decoders
             .iter_mut()
             .for_each(|res| {
@@ -584,18 +563,13 @@ impl CirceInNspace for p::Choice {
                 res.block = Some("object CirceImplicits".to_string());
             });
         let mut items_encoders = self.choices
-            .iter()
-            .filter(|x| match x {
+            .filter_gen(|x| match x {
                 p::ChoiceItem::Structure(_) => true,
                 p::ChoiceItem::TypeTag{ doc: _, choice: _} => true,
                 p::ChoiceItem::Value{doc: _, name: _, value: _ } => true,
                 p::ChoiceItem::Wrap{doc: _, name: _, field: _, target: _ } => true,
                 _ => false,
-            })
-            .map(|x| x.encoder_in_choice(&scope))
-            .collect::<Result<Vec<Vec<GenResult>>, IozhError>>()
-            .map(|vec| vec.into_iter().flatten())?
-            .collect::<Vec<_>>();
+            }, |x| x.encoder_in_choice(&scope))?;
         items_encoders
             .iter_mut()
             .for_each(|res| {

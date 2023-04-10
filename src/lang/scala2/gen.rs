@@ -3,6 +3,59 @@ use crate::lang::scala2::*;
 use crate::lang::scala2::utils::*;
 use crate::lang::scala2::gen_circe::*;
 
+pub trait GenItems<A> {
+    fn mapg<G>(&self, g: G) -> Result<Vec<GenResult>, IozhError>
+    where
+        G: Fn(&A) -> Result<Vec<GenResult>, IozhError>;
+
+    fn filter_gen<F, G>(&self, f: F, g: G) -> Result<Vec<GenResult>, IozhError>
+    where
+        F: Fn(&A) -> bool,
+        G: Fn(&A) -> Result<Vec<GenResult>, IozhError>;
+}
+
+impl <A> GenItems<A> for Vec<A> {
+    fn mapg<G>(&self, g: G) -> Result<Vec<GenResult>, IozhError>
+    where
+        G: Fn(&A) -> Result<Vec<GenResult>, IozhError>
+    {
+        Ok(self
+            .iter()
+            .map(|x| g(x))
+            .collect::<Result<Vec<Vec<GenResult>>, IozhError>>()
+            .map(|vec| vec.into_iter().flatten())?
+            .collect::<Vec<_>>())
+    }
+
+    fn filter_gen<F, G>(&self, f: F, g: G) -> Result<Vec<GenResult>, IozhError>
+    where
+        F: Fn(&A) -> bool,
+        G: Fn(&A) -> Result<Vec<GenResult>, IozhError>
+    {
+        Ok(self
+            .iter()
+            .filter(|x| f(x))
+            .map(|x| g(x))
+            .collect::<Result<Vec<Vec<GenResult>>, IozhError>>()
+            .map(|vec| vec.into_iter().flatten())?
+            .collect::<Vec<_>>())
+    }
+}
+
+pub trait GenResults {
+    fn map_content(&self) -> Vec<String>;
+    fn map_imports(&self) -> Vec<String>;
+}
+
+impl GenResults for Vec<GenResult> {
+    fn map_content(&self) -> Vec<String> {
+        self.iter().map(|x| x.content.clone()).collect::<Vec<_>>()
+    }
+    fn map_imports(&self) -> Vec<String> {
+        self.iter().map(|x| x.imports.clone()).flatten().collect::<Vec<_>>()
+    }
+}
+
 impl ProjectContext {
     pub fn push_nspace(&self, nspace: &p::Nspace) -> NspaceContext {
         let nspace_name = &fs_sanitize(&nspace.name);
@@ -27,7 +80,7 @@ impl NspaceContext {
             path: nspace,
         }
     }
-    pub fn push_struct(&self, s: &p::Structure) -> std::result::Result<StructContext, IozhError> {
+    pub fn push_struct(&self, s: &p::Structure) -> Result<StructContext, IozhError> {
         let base_name = sanitize(&s.name.name);
         let full_type_name = s.name.gen()?.to_string();
         let type_args = gen_type_args(&s.name.args)?;
@@ -35,10 +88,10 @@ impl NspaceContext {
             nspace: self.clone(),
             base_name,
             full_type_name,
-            type_args: type_args,
+            type_args,
         })
     }
-    pub fn push_choice(&self, c: &p::Choice) -> std::result::Result<ChoiceContext, IozhError> {
+    pub fn push_choice(&self, c: &p::Choice) -> Result<ChoiceContext, IozhError> {
         let base_name = sanitize(&c.name.name);
         let full_type_name = c.name.gen()?.to_string();
         let tag_opt = c.get_most_common_tag_key();
@@ -49,7 +102,7 @@ impl NspaceContext {
             most_common_tag_key: tag_opt,
         })
     }
-    pub fn push_service(&self, s: &p::Service) -> std::result::Result<ServiceContext, IozhError> {
+    pub fn push_service(&self, s: &p::Service) -> Result<ServiceContext, IozhError> {
         let base_name = sanitize(&s.name.name);
         let full_type_name = s.name.gen()?.to_string();
         Ok(ServiceContext {
@@ -58,7 +111,7 @@ impl NspaceContext {
             full_type_name,
         })
     }
-    pub fn push_http_service(&self, s: &p::HttpService) -> std::result::Result<HttpServiceContext, IozhError> {
+    pub fn push_http_service(&self, s: &p::HttpService) -> Result<HttpServiceContext, IozhError> {
         let base_name = sanitize(&s.name.name);
         let full_type_name = s.name.gen()?.to_string();
         Ok(HttpServiceContext {
@@ -70,7 +123,7 @@ impl NspaceContext {
 }
 
 impl ChoiceContext {
-    pub fn push_struct(&self, s: &p::Structure) -> std::result::Result<StructContext, IozhError> {
+    pub fn push_struct(&self, s: &p::Structure) -> Result<StructContext, IozhError> {
         let base_name = sanitize(&s.name.name);
         let full_type_name = s.name.gen()?.to_string();
         let type_args = gen_type_args(&s.name.args)?;
@@ -93,18 +146,12 @@ impl ServiceContext {
     }
 }
 
-fn gen_type_args(type_args: &Vec<p::TypeTag>) -> std::result::Result<Vec<String>, IozhError> {
-    Ok(type_args
-        .iter()
-        .map(|x| x.gen())
-        .collect::<Result<Vec<Vec<GenResult>>, IozhError>>()
-        .map(|vec| vec.into_iter().flatten())?
-        .map(|m| m.content)
-        .collect::<Vec<_>>())
+fn gen_type_args(type_args: &Vec<p::TypeTag>) -> Result<Vec<String>, IozhError> {
+    Ok(type_args.mapg(|x| x.gen())?.map_content())
 }
 
 impl Gen for p::Literal {
-    fn gen(&self) -> std::result::Result<Vec<GenResult>, IozhError> {
+    fn gen(&self) -> Result<Vec<GenResult>, IozhError> {
         match self {
             p::Literal::String{ pos: _, value} => GenResult::single(format!("\"{}\"", value)),
             p::Literal::Int{ pos: _, value } => GenResult::single(format!("{}", value)),
@@ -114,7 +161,7 @@ impl Gen for p::Literal {
 }
 
 impl InChoice for p::Literal {
-    fn gen_in_choice(&self, _parent: &ChoiceContext) -> std::result::Result<Vec<GenResult>, IozhError> {
+    fn gen_in_choice(&self, _parent: &ChoiceContext) -> Result<Vec<GenResult>, IozhError> {
         match self {
             p::Literal::String{ pos: _, value} => GenResult::single(format!("def getValue = {}", value)),
             p::Literal::Int{ pos: _, value } => GenResult::single(format!("def getValue = {}", value)),
@@ -124,7 +171,7 @@ impl InChoice for p::Literal {
 }
 
 impl Gen for p::TypeTag {
-    fn gen(&self) -> std::result::Result<Vec<GenResult>, IozhError> {
+    fn gen(&self) -> Result<Vec<GenResult>, IozhError> {
         let args = gen_type_args(&self.args)?.join(",");
         let name = map_type(sanitize(&self.name).as_str()).to_string();
         if args.len() == 0 {
@@ -136,30 +183,23 @@ impl Gen for p::TypeTag {
 }
 
 impl Gen for p::TypePath {
-    fn gen(&self) -> std::result::Result<Vec<GenResult>, IozhError> {
-        let path = self
-            .path
-            .iter()
-            .map(|x| x.gen())
-            .collect::<Result<Vec<Vec<GenResult>>, IozhError>>()
-            .map(|vec| vec.into_iter().flatten())?
-            .map(|m| m.content)
-            .collect::<Vec<_>>().join("\n");
+    fn gen(&self) -> Result<Vec<GenResult>, IozhError> {
+        let path = self.path.mapg(|x| x.gen())?.map_content().join("\n");
         GenResult::single(format!("{}", path))
     }
 }
 
 impl InChoice for p::ChoiceItem {
-    fn gen_in_choice(&self, parent: &ChoiceContext) -> std::result::Result<Vec<GenResult>, IozhError> {
+    fn gen_in_choice(&self, parent: &ChoiceContext) -> Result<Vec<GenResult>, IozhError> {
         match self {
             p::ChoiceItem::Structure(v) => v.gen_in_choice(&parent),
             p::ChoiceItem::TypeTag { doc: _, choice } => {
-                let choice_content = choice.gen()?.into_iter().map(|c| c.content).collect::<Vec<_>>().join("\n");
+                let choice_content = choice.gen()?.map_content().join("\n");
                 GenResult::single(format!("case object {} extends {}", choice_content, parent.base_name))
             }
             p::ChoiceItem::Value { doc: _, name, value } => {
-                let name_content = name.gen()?.into_iter().map(|c| c.content).collect::<Vec<_>>().join("\n");
-                let value_content = value.gen_in_choice(&parent)?.into_iter().map(|c| c.content).collect::<Vec<_>>().join("\n");
+                let name_content = name.gen()?.map_content().join("\n");
+                let value_content = value.gen_in_choice(&parent)?.map_content().join("\n");
                 GenResult::single(format!("case object {} extends {} {{\n{}\n}}", name_content, parent.base_name, value_content))
             }
             p::ChoiceItem::Wrap { doc: _, name, field, target } => {
@@ -180,31 +220,18 @@ impl InChoice for p::ChoiceItem {
 }
 
 impl InNspace for p::Choice {
-    fn gen_in_nspace(&self, parent: &NspaceContext) -> std::result::Result<Vec<GenResult>, IozhError> {
+    fn gen_in_nspace(&self, parent: &NspaceContext) -> Result<Vec<GenResult>, IozhError> {
         let scope = parent.push_choice(self)?;
-        let result = self
-            .choices
-            .iter()
-            .filter(|x| match x {
+        let result = self.choices
+            .filter_gen(|x| match x {
                 p::ChoiceItem::Structure(_) => true,
                 p::ChoiceItem::Value { doc: _, name: _, value: _ } => true,
                 p::ChoiceItem::TypeTag { doc: _, choice: _ } => true,
                 p::ChoiceItem::Wrap { doc: _, name: _, field: _, target: _ } => true,
                 p::ChoiceItem::Nil => false,
-            })
-            .map(|x| x.gen_in_choice(&scope))
-            .collect::<Result<Vec<Vec<GenResult>>, IozhError>>()
-            .map(|vec| vec.into_iter().flatten())?
-            .collect::<Vec<_>>();
-        let imports = result
-            .iter()
-            .map(|m| m.imports.clone())
-            .flatten()
-            .collect::<Vec<_>>();
-        let items = result
-            .into_iter()
-            .map(|m| m.content)
-            .collect::<Vec<_>>().join("\n");
+            }, |x| x.gen_in_choice(&scope))?;
+        let imports = result.map_imports();
+        let items = result.map_content().join("\n");
         let header = format!("sealed trait {}", scope.full_type_name);
         let body = format!("object {} {{ {} }}", scope.base_name, items);
         let file_name = gen_filename(&scope.base_name);
@@ -215,7 +242,7 @@ impl InNspace for p::Choice {
             GenResult {
                 file: Some(file_path),
                 content: format!("{}\n{}", header, body),
-                imports: imports,
+                imports,
                 package: scope.nspace.path,
                 block: None,
             }
@@ -225,7 +252,7 @@ impl InNspace for p::Choice {
 }
 
 impl InStruct for p::Field {
-    fn gen_in_struct(&self, _parent: &StructContext) -> std::result::Result<Vec<GenResult>, IozhError> {
+    fn gen_in_struct(&self, _parent: &StructContext) -> Result<Vec<GenResult>, IozhError> {
         let tp = self.type_path.gen()?.to_string();
         Ok(vec![
             GenResult {
@@ -240,14 +267,14 @@ impl InStruct for p::Field {
 }
 
 impl InMethod for p::Field {
-    fn gen_in_method(&self, _parent: &MethodContext) -> std::result::Result<Vec<GenResult>, IozhError> {
+    fn gen_in_method(&self, _parent: &MethodContext) -> Result<Vec<GenResult>, IozhError> {
         let tp = self.type_path.gen()?.to_string();
         GenResult::single(format!("{}: {}", self.name, tp))
     }
 }
 
 impl InStruct for p::StructItem {
-    fn gen_in_struct(&self, parent: &StructContext) -> std::result::Result<Vec<GenResult>, IozhError> {
+    fn gen_in_struct(&self, parent: &StructContext) -> Result<Vec<GenResult>, IozhError> {
         match self {
             p::StructItem::Field(v) => v.gen_in_struct(parent),
             p::StructItem::Tag(_v) => GenResult::empty()
@@ -256,33 +283,20 @@ impl InStruct for p::StructItem {
 }
 
 impl InChoice for p::Structure {
-    fn gen_in_choice(&self, parent: &ChoiceContext) -> std::result::Result<Vec<GenResult>, IozhError> {
+    fn gen_in_choice(&self, parent: &ChoiceContext) -> Result<Vec<GenResult>, IozhError> {
         let scope = parent.push_struct(self)?;
-        let result = self
-            .fields
-            .iter()
-            .filter(|x| match x {
+        let result = self.fields
+            .filter_gen(|x| match x {
                 p::StructItem::Field(_) => true,
                 _ => false,
-            })
-            .map(|x| x.gen_in_struct(&scope))
-            .collect::<Result<Vec<Vec<GenResult>>, IozhError>>()
-            .map(|vec| vec.into_iter().flatten())?
-            .collect::<Vec<_>>();
-        let imports = result
-            .iter()
-            .map(|m| m.imports.clone())
-            .flatten()
-            .collect::<Vec<_>>();
-        let fields = result
-            .into_iter()
-            .map(|m| m.content)
-            .collect::<Vec<_>>().join(",");
+            }, |x| x.gen_in_struct(&scope))?;
+        let imports = result.map_imports();
+        let fields = result.map_content().join(",");
         Ok(vec![
             GenResult {
                 file: None,
                 content: format!("case class {}({fields}) extends {}", scope.full_type_name, parent.full_type_name),
-                imports: imports,
+                imports,
                 package: scope.nspace.path,
                 block: None,
             }
@@ -291,28 +305,18 @@ impl InChoice for p::Structure {
 }
 
 impl InNspace for p::Structure {
-    fn gen_in_nspace(&self, parent: &NspaceContext) -> std::result::Result<Vec<GenResult>, IozhError> {
+    fn gen_in_nspace(&self, parent: &NspaceContext) -> Result<Vec<GenResult>, IozhError> {
         let scope = parent.push_struct(self)?;
-        let result = self
-            .fields
-            .iter()
-            .filter(|x| match x {
-                p::StructItem::Field(_) => true,
-                _ => false,
-            })
-            .map(|x| x.gen_in_struct(&scope))
-            .collect::<Result<Vec<Vec<GenResult>>, IozhError>>()
-            .map(|vec| vec.into_iter().flatten())?
-            .collect::<Vec<_>>();
-        let imports = result
-            .iter()
-            .map(|m| m.imports.clone())
-            .flatten()
-            .collect::<Vec<_>>();
-        let fields = result
-            .into_iter()
-            .map(|m| m.content)
-            .collect::<Vec<_>>().join(",");
+        let result = self.fields
+            .filter_gen(|x|
+                match x {
+                    p::StructItem::Field(_) => true,
+                    _ => false,
+                },
+                |x| x.gen_in_struct(&scope)
+            )?;
+        let imports = result.map_imports();
+        let fields = result.map_content().join(",");
         let file_name = gen_filename(&scope.base_name);
         let file_path = parent.folder.join(file_name);
         let mut circe_codecs = self.codec_in_nspace(parent)?;
@@ -321,7 +325,7 @@ impl InNspace for p::Structure {
             GenResult {
                 file: Some(file_path),
                 content: format!("case class {}({fields})", scope.full_type_name),
-                imports: imports,
+                imports,
                 package: scope.nspace.path,
                 block: None,
             }
@@ -331,41 +335,21 @@ impl InNspace for p::Structure {
 }
 
 impl InService for p::Method {
-    fn gen_in_service(&self, parent: &ServiceContext) -> std::result::Result<Vec<GenResult>, IozhError> {
+    fn gen_in_service(&self, parent: &ServiceContext) -> Result<Vec<GenResult>, IozhError> {
         let name = self.name.gen()?.to_string();
         let scope = parent.push_method(self);
-        let args = self
-            .args
-            .iter()
-            .map(|x| x.gen_in_method(&scope))
-            .collect::<Result<Vec<Vec<GenResult>>, IozhError>>()
-            .map(|vec| vec.into_iter().flatten())?
-            .map(|m| m.content)
-            .collect::<Vec<_>>().join("\n");
+        let args = self.args.mapg(|x| x.gen_in_method(&scope))?.map_content().join("\n");
         let ret = self.result.gen()?.to_string();
         GenResult::single(format!("def {}({}): {}", name, args, ret))
     }
 }
 
 impl InNspace for p::Service {
-    fn gen_in_nspace(&self, parent: &NspaceContext) -> std::result::Result<Vec<GenResult>, IozhError> {
+    fn gen_in_nspace(&self, parent: &NspaceContext) -> Result<Vec<GenResult>, IozhError> {
         let scope = parent.push_service(self)?;
-        let methods_results = self
-            .methods
-            .iter()
-            .map(|x| x.gen_in_service(&scope))
-            .collect::<Result<Vec<Vec<GenResult>>, IozhError>>()
-            .map(|vec| vec.into_iter().flatten())?
-            .collect::<Vec<_>>();
-        let imports = methods_results
-            .iter()
-            .map(|m| m.imports.clone())
-            .flatten()
-            .collect::<Vec<_>>();
-        let methods = methods_results
-            .iter()
-            .map(|m| m.content.clone())
-            .collect::<Vec<_>>().join("\n");
+        let methods_results = self.methods.mapg(|x| x.gen_in_service(&scope))?;
+        let imports = methods_results.map_imports();
+        let methods = methods_results.map_content().join("\n");
         let content = format!("trait {} {{\n{}\n}}", scope.full_type_name, methods);
         let file_name = gen_filename(&scope.base_name);
         let file_path = parent.folder.join(file_name);
@@ -373,7 +357,7 @@ impl InNspace for p::Service {
             GenResult {
                 file: Some(file_path),
                 content: content,
-                imports: imports,
+                imports,
                 package: scope.nspace.path,
                 block: None,
             }
@@ -382,23 +366,19 @@ impl InNspace for p::Service {
 }
 
 impl InHttpService for p::HttpRoute {
-    fn gen_in_http_service(&self, _parent: &HttpServiceContext) -> std::result::Result<Vec<GenResult>, IozhError> {
+    fn gen_in_http_service(&self, _parent: &HttpServiceContext) -> Result<Vec<GenResult>, IozhError> {
         Ok(vec![
         ])
     }
 }
 
 impl InNspace for p::HttpService {
-    fn gen_in_nspace(&self, parent: &NspaceContext) -> std::result::Result<Vec<GenResult>, IozhError> {
+    fn gen_in_nspace(&self, parent: &NspaceContext) -> Result<Vec<GenResult>, IozhError> {
         let scope = parent.push_http_service(self)?;
-        let methods = self
-            .routes
-            .iter()
-            .map(|x| x.gen_in_http_service(&scope))
-            .collect::<Result<Vec<Vec<GenResult>>, IozhError>>()
-            .map(|vec| vec.into_iter().flatten())?
-            .map(|m| m.content)
-            .collect::<Vec<_>>().join("\n");
+        let methods = self.routes
+            .mapg(|x| x.gen_in_http_service(&scope))?
+            .map_content()
+            .join("\n");
         let header = format!("trait {}", scope.full_type_name);
         let body = format!("object {} {{ {} }}", scope.base_name, methods);
         GenResult::single(format!("{}\n{}", header, body))
@@ -406,7 +386,7 @@ impl InNspace for p::HttpService {
 }
 
 impl InNspace for p::NspaceItem {
-    fn gen_in_nspace(&self, parent: &NspaceContext) -> std::result::Result<Vec<GenResult>, IozhError> {
+    fn gen_in_nspace(&self, parent: &NspaceContext) -> Result<Vec<GenResult>, IozhError> {
         match self {
             p::NspaceItem::Structure(v) => v.gen_in_nspace(parent),
             p::NspaceItem::Choice(v) => v.gen_in_nspace(parent),
@@ -418,40 +398,25 @@ impl InNspace for p::NspaceItem {
 }
 
 impl InNspace for p::Nspace {
-    fn gen_in_nspace(&self, parent: &NspaceContext) -> std::result::Result<Vec<GenResult>, IozhError> {
+    fn gen_in_nspace(&self, parent: &NspaceContext) -> Result<Vec<GenResult>, IozhError> {
         let scope = parent.push_nspace(self);
-        self
-            .items
-            .iter()
-            .map(|x| x.gen_in_nspace(&scope))
-            .collect::<Result<Vec<_>, IozhError>>()
-            .map(|vec| vec.into_iter().flatten().collect())
+        self.items.mapg(|x| x.gen_in_nspace(&scope))
     }
 }
 
 impl InProject for p::Nspace {
-    fn gen_in_project(&self, parent: &ProjectContext) -> std::result::Result<Vec<GenResult>, IozhError> {
+    fn gen_in_project(&self, parent: &ProjectContext) -> Result<Vec<GenResult>, IozhError> {
         let scope = parent.push_nspace(&self);
-        self
-            .items
-            .iter()
-            .map(|x| x.gen_in_nspace(&scope))
-            .collect::<Result<Vec<_>, IozhError>>()
-            .map(|vec| vec.into_iter().flatten().collect())
+        self.items.mapg(|x| x.gen_in_nspace(&scope))
     }
 }
 
 impl p::Project {
-    pub fn generate(&self, target_folder: &std::path::Path) -> std::result::Result<(), IozhError> {
+    pub fn generate(&self, target_folder: &std::path::Path) -> Result<(), IozhError> {
         let scope = ProjectContext {
             target_folder: target_folder.to_path_buf(),
         };
-        let mut items = self.nspaces
-            .iter()
-            .map(|ns| ns.gen_in_project(&scope))
-            .collect::<Result<Vec<Vec<GenResult>>, IozhError>>()
-            .map(|vec| vec.into_iter().flatten())?
-            .collect::<Vec<_>>();
+        let mut items = self.nspaces.mapg(|x| x.gen_in_project(&scope))?;
         let mut circe_items = circe_pack(&scope)?;
         items.append(&mut circe_items);
         write_fs_tree(items, &scope)
