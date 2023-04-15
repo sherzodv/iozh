@@ -3,19 +3,24 @@ mod loc;
 pub mod gen;
 pub mod gen_circe;
 
-use std::path::PathBuf;
-use crate::parser as p;
+use crate::ast;
 use crate::lang::scala2::loc::Loc;
+
+pub struct GenResult {
+    unit: Option<String>,
+    content: String,
+    imports: Vec<String>,
+    package: Vec<String>,
+    block: Option<String>,
+}
 
 #[derive(Debug, Clone)]
 pub struct ProjectContext {
-    target_folder: PathBuf,
 }
 
 #[derive(Debug, Clone)]
 pub struct NspaceContext {
     project: ProjectContext,
-    folder: PathBuf,
     path: Vec<String>,
 }
 
@@ -27,7 +32,8 @@ pub struct StructContext {
     pub type_args: Vec<String>,
 }
 
-pub struct ChoiceContext {
+pub struct ChoiceContext<'a> {
+    p: &'a ast::Choice,
     nspace: NspaceContext,
     base_name: String,
     full_type_name: String,
@@ -52,18 +58,11 @@ pub struct MethodContext {
     pub name: String,
 }
 
+
 #[derive(Debug)]
 pub struct IozhError {
-    pub pos: p::Pos,
+    pub pos: ast::Pos,
     pub msg: String,
-}
-
-pub struct GenResult {
-    file: Option<PathBuf>,
-    content: String,
-    imports: Vec<String>,
-    package: Vec<String>,
-    block: Option<String>,
 }
 
 pub trait Gen where Self: Loc, Self: std::fmt::Debug {

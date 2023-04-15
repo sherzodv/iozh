@@ -14,7 +14,7 @@ string_literal = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
 integer_literal = { "-"? ~ digit+ }
 literal = { string_literal | integer_literal }
 
-type_args = { "[" ~ type_tag ~ ("," ~ type_tag)* ~ "]" }
+type_args = { "[" ~ type_path ~ ("," ~ type_path)* ~ "]" }
 type_tag = { type_name ~ type_args? }
 type_path = { type_tag ~ ("." ~ type_tag)* }
 
@@ -23,10 +23,11 @@ tag = { doc? ~ field_name ~ ":" ~ literal }
 fields = _{ (","? ~ (field | tag))+ }
 fields_block = _{ fields | ("{" ~ fields ~ "}") | "(" ~ fields ~ ")" }
 
-structure = { doc? ~ type_tag ~ fields_block }
+structure = { doc? ~ type_tag ~ ((fields_block) | ("{" ~ "}")) }
 
 method_result = { type_path }
-method = { doc? ~ type_tag ~ fields_block ~ "=>" ~ method_result }
+method_args = _{ ("(" ~ fields_block ~ ")") | ("{" ~ fields_block ~ "}") | fields_block }
+method = { doc? ~ "def" ~ type_tag ~ fields_block ~ "=>" ~ method_result }
 methods = _{ (","? ~ method)+ }
 methods_block = _{ methods | ("{" ~ methods ~ "}") | "(" ~ methods ~ ")" }
 service = { doc? ~ type_tag ~ methods_block }
@@ -35,7 +36,9 @@ choice_name = { type_tag }
 choice_item_value = { doc? ~ type_tag ~ "=" ~ literal }
 choice_item_wrap = { doc? ~ type_tag ~ "(" ~ type_name ~ ")" ~ "=" ~ type_path }
 choice_item = { (structure | choice_item_value | choice_item_wrap | (doc? ~ type_tag)) }
-choice = { doc? ~ choice_name ~ "=" ~ "|"? ~ choice_item ~ ("|" ~ choice_item)* }
+choice_items_no_delimiter = _{ choice_item* }
+choice_items_with_delimiter = _{ "|"? ~ choice_item ~ ("|" ~ choice_item)* }
+choice = { doc? ~ choice_name ~ "=" ~ (("{" ~ fields? ~ choice_items_no_delimiter ~ "}") | choice_items_with_delimiter) }
 
 method_ref = { type_path }
 http_route_var = @{ (":" ~ identifier) | ("{" ~ identifier ~ "}") }

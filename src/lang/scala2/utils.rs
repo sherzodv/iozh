@@ -1,13 +1,12 @@
 use crate::lang::scala2::IozhError;
 use crate::lang::scala2::GenResult;
-use crate::lang::scala2::ProjectContext;
 
 use std::fs;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::collections::HashMap;
 use itertools::Itertools;
-use crate::parser as p;
+use crate::ast;
 
 
 pub trait ResultVec {
@@ -23,7 +22,7 @@ pub trait ResultExt<T> {
 impl <T> ResultExt<T> for std::io::Result<T> {
     fn to_iozh(self) -> Result<T, IozhError> {
         self.map_err(|e| IozhError {
-            pos: p::Pos { line: 0, col: 0},
+            pos: ast::Pos { line: 0, col: 0},
             msg: format!("Failed to write file or dir: {}", e),
         })
     }
@@ -45,7 +44,7 @@ impl GenResult {
     pub fn single(content: String) -> Result<Vec<GenResult>, IozhError> {
         Ok(vec![
             GenResult {
-                file: None,
+                unit: None,
                 content: content,
                 imports: vec![],
                 package: vec![],
@@ -66,13 +65,13 @@ impl FileWriter for std::fs::File {
     fn put(& mut self, content: &str) -> std::result::Result<(), IozhError> {
         self.write_all(content.as_bytes())
             .map_err(|e| IozhError {
-                pos: p::Pos { line: 0, col: 0},
+                pos: ast::Pos { line: 0, col: 0},
                 msg: format!("Failed to write file: {}", e),
             })
     }
     fn ln(& mut self) -> std::result::Result<(), IozhError> {
         self.write_all("\n".as_bytes()).map_err(|e| IozhError {
-            pos: p::Pos { line: 0, col: 0},
+            pos: ast::Pos { line: 0, col: 0},
             msg: format!("Failed to write file: {}", e),
         })
     }
@@ -90,7 +89,7 @@ impl FileWriter for std::fs::File {
 pub fn group(items: Vec<GenResult>) -> Vec<GenResult> {
     let mut m = HashMap::<String, GenResult>::new();
     for mut item in items {
-        let mut key: String = item.file.iter().map(|x| x.to_string_lossy().to_string()).join("");
+        let mut key: String = item.unit.clone().unwrap_or_else(|| "".to_string());
         key.push_str(&item.block.iter().map(|x| x.to_string()).join(""));
         if let Some(existing) = m.get_mut(&key) {
             existing.content.push_str("\n");
@@ -110,19 +109,21 @@ pub fn group(items: Vec<GenResult>) -> Vec<GenResult> {
         .collect::<Vec<_>>()
 }
 
-pub fn write_fs_tree(items: Vec<GenResult>, project: &ProjectContext) -> std::result::Result<(), IozhError> {
+pub fn write_fs_tree(items: Vec<GenResult>, target_folder: &Path) -> std::result::Result<(), IozhError> {
     let grouped_items = group(items);
     for item in grouped_items {
         let rel_package_path = item.package
             .iter()
-            .fold(PathBuf::new(), |mut acc, string| {
-                acc.push(string);
+            .fold(PathBuf::new(), |mut acc, package| {
+                acc.push(fs_sanitize(package));
                 acc
             });
-        let abs_package_path = project.target_folder.join(rel_package_path);
-        fs::create_dir_all(abs_package_path).to_iozh()?;
-        if let Some(file) = &item.file {
-            let mut file = fs::File::create(file).to_iozh()?;
+        let abs_package_path = target_folder.join(rel_package_path);
+        fs::create_dir_all(&abs_package_path).to_iozh()?;
+        if let Some(unit) = &item.unit {
+            let file_name = gen_filename(unit);
+            let file_path = abs_package_path.as_path().join(file_name);
+            let mut file = fs::File::create(abs_package_path.join(file_path)).to_iozh()?;
             file.putlnln(&format!("package {}", item.package.join(".")))?;
             if !item.imports.is_empty() {
                 for import in &item.imports {

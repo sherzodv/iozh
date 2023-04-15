@@ -4,141 +4,7 @@ use pest::Parser;
 use pest::error::Error;
 use pest::iterators::{Pair, Pairs};
 
-#[derive(Parser)]
-#[grammar = "iozh.pest"]
-pub struct Iozh;
-
-#[derive(Clone)]
-pub struct Pos {
-    pub line: usize,
-    pub col: usize,
-}
-
-#[derive(Debug, Clone)]
-pub enum Literal {
-    String{ pos: Pos, value: String },
-    Int{ pos: Pos, value: i64 },
-    Nil,
-}
-
-pub struct TypeTag {
-    pub pos: Pos,
-    pub name: String,
-    pub args: Vec<TypeTag>,
-}
-
-pub struct TypePath {
-    pub pos: Pos,
-    pub path: Vec<TypeTag>,
-}
-
-#[derive(Clone)]
-pub struct Tag {
-    pub pos: Pos,
-    pub name: String,
-    pub value: Literal,
-}
-
-pub struct Field {
-    pub pos: Pos,
-    pub doc: String,
-    pub name: String,
-    pub type_path: TypePath,
-}
-
-pub enum StructItem {
-    Field(Field),
-    Tag(Tag),
-}
-
-#[derive(Debug)]
-pub struct Structure {
-    pub pos: Pos,
-    pub doc: String,
-    pub name: TypeTag,
-    pub fields: Vec<StructItem>,
-}
-
-pub enum ChoiceItem {
-    Nil,
-    TypeTag{ doc: String, choice: TypeTag },
-    Structure(Structure),
-    Value{ doc: String, name: TypeTag, value: Literal },
-    Wrap{ doc: String, name: TypeTag, field: String, target: TypePath },
-}
-
-#[derive(Debug)]
-pub struct Choice {
-    pub pos: Pos,
-    pub doc: String,
-    pub name: TypeTag,
-    pub choices: Vec<ChoiceItem>,
-}
-
-#[derive(Debug)]
-pub struct Method {
-    pub pos: Pos,
-    pub doc:  String,
-    pub name: TypeTag,
-    pub args: Vec<Field>,
-    pub result: TypePath,
-}
-
-#[derive(Debug)]
-pub struct Service {
-    pub pos: Pos,
-    pub doc: String,
-    pub name: TypeTag,
-    pub methods: Vec<Method>,
-}
-
-pub struct MethodRef {
-    pub pos: Pos,
-    pub path: Vec<TypeTag>,
-}
-
-pub struct HttpRoutePattern {
-    pub pos: Pos,
-    pub items: Vec<String>,
-}
-
-#[derive(Debug)]
-pub struct HttpRoute {
-    pub pos: Pos,
-    pub verb: String,
-    pub input: TypePath,
-    pub pattern: HttpRoutePattern,
-    pub method: MethodRef,
-    pub fields: Vec<Field>,
-}
-
-#[derive(Debug)]
-pub struct HttpService {
-    pub pos: Pos,
-    pub name: TypeTag,
-    pub routes: Vec<HttpRoute>,
-}
-
-pub enum NspaceItem {
-    Structure(Structure),
-    Choice(Choice),
-    Service(Service),
-    HttpService(HttpService),
-    Nspace(Nspace),
-}
-
-#[derive(Debug)]
-pub struct Nspace {
-    pub pos: Pos,
-    pub name: String,
-    pub items: Vec<NspaceItem>,
-}
-
-#[derive(Debug)]
-pub struct Project {
-    pub pos: Pos,
-    pub nspaces: Vec<Nspace>,
-}
+use crate::ast::*;
 
 impl Tag {
     pub fn get_value_as_str(&self) -> String {
@@ -335,12 +201,12 @@ fn parse_literal(pair: Pair<Rule>) -> Literal {
     lit
 }
 
-fn parse_type_args(pair: Pair<Rule>) -> Vec<TypeTag> {
+fn parse_type_args(pair: Pair<Rule>) -> Vec<TypePath> {
     let mut args = Vec::new();
     for pair in pair.into_inner() {
         match pair.as_rule() {
-            Rule::type_tag => {
-                args.push(parse_type_tag(pair));
+            Rule::type_path => {
+                args.push(parse_type_path(pair));
             }
             x => unreachable!("unhandled rule: {:#?}", x)
         }
@@ -577,6 +443,7 @@ fn parse_choice(pair: Pair<Rule>) -> Choice {
         args: Vec::new(),
     };
     let (mut line, mut col) = (0, 0);
+    let mut fields = Vec::new();
     let mut choices = Vec::new();
 
     for pair in pair.into_inner() {
@@ -595,6 +462,9 @@ fn parse_choice(pair: Pair<Rule>) -> Choice {
                     }
                 }
             }
+            Rule::field => {
+                fields.push(parse_field(pair));
+            }
             Rule::choice_item => {
                 choices.push(parse_choice_item(pair));
             }
@@ -605,6 +475,7 @@ fn parse_choice(pair: Pair<Rule>) -> Choice {
         pos: Pos { line, col },
         doc,
         name,
+        fields,
         choices,
     }
 }

@@ -1,16 +1,19 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 extern crate pest;
 #[macro_use]
 extern crate pest_derive;
 
 
+mod ast;
 mod parser;
 mod lang;
+mod error;
 
-fn read_file_and_parse(path: &str) -> parser::Project {
+fn read_file_and_parse(path: &str) -> ast::Project {
     let source = std::fs::read_to_string(path).unwrap();
     let project = parser::parse(&source).unwrap();
+    // println!("{:#?}", project);
     project
 }
 
@@ -22,23 +25,8 @@ struct IozhCli {
     folders: Vec<PathBuf>,
 }
 
-pub fn run() {
-    let args = IozhCli::parse();
-
-    let folders: Vec<&Path> = args.folders
-        .iter()
-        .map(|p| p.as_path())
-        .collect();
-
-    let in_folders = folders.split_last().map(|a| a.1).unwrap_or(&[]).iter().collect::<Vec<_>>();
-    let out_folder: &Path = folders.last().unwrap();
-
-    println!("{:#?}", in_folders);
-    println!("{:#?}", out_folder);
-}
-
 fn main() {
-    let p = read_file_and_parse("src/test.iozh");
+    let p = read_file_and_parse("src/tgbot.iozh");
     let s = p.generate(
         std::path::Path::new("/home/sherzod/work/iozh-proj/scala2-test/src/main/scala"),
     );
