@@ -1,8 +1,11 @@
 use core::fmt;
 use itertools::Itertools;
 use pest::Parser;
-use pest::error::Error;
 use pest::iterators::{Pair, Pairs};
+
+#[derive(Parser)]
+#[grammar = "iozh.pest"]
+pub struct Iozh;
 
 use crate::ast::*;
 
@@ -17,9 +20,10 @@ impl Tag {
 }
 
 impl ChoiceItem {
-    pub fn get_tag_value(&self, tag: &str) -> String {
+    pub fn get_tag_value(&self, tag: &str, project: &Project) -> String {
         match self {
-            ChoiceItem::Structure(s) => {
+            ChoiceItem::Structure(idx) => {
+                let s = project.get_structure(*idx).unwrap();
                 if let Some(tag_val) = s.get_tag(tag).map(|t| t.get_value_as_str()) {
                     tag_val
                 } else {
@@ -29,19 +33,22 @@ impl ChoiceItem {
             _ => "WRONG_PLACE_TO_USE_TAG".to_string()
         }
     }
-    pub fn get_tags(&self) -> Vec<Tag> {
+    pub fn get_tags(&self, project: &Project) -> Vec<Tag> {
         match self {
-            ChoiceItem::Structure(s) => s.get_tags(),
+            ChoiceItem::Structure(idx) => {
+                let s = project.get_structure(*idx).unwrap();
+                s.get_tags()
+            }
             _ => vec![],
         }
     }
 }
 
 impl Choice {
-    pub fn get_most_common_tag_key(&self) -> Option<String> {
+    pub fn get_most_common_tag_key(&self, project: &Project) -> Option<String> {
         let counts = self.choices
             .iter()
-            .map(|c| c.get_tags())
+            .map(|c| c.get_tags(project))
             .flatten()
             .map(|t| t.name)
             .sorted()
@@ -311,41 +318,6 @@ fn parse_field(pair: Pair<Rule>) -> Field {
     }
 }
 
-fn parse_structure(pair: Pair<Rule>) -> Structure {
-    let mut name = TypeTag{
-        pos: Pos { line: 0, col: 0 },
-        name: String::new(),
-        args: Vec::new(),
-    };
-    let mut doc = String::new();
-    let (mut line, mut col) = (0, 0);
-    let mut fields = Vec::new();
-    for pair in pair.into_inner() {
-        (line, col) = pair.as_span().start_pos().line_col();
-        match pair.as_rule() {
-            Rule::doc => {
-                doc = pair.as_str().to_string();
-            }
-            Rule::type_tag => {
-                name = parse_type_tag(pair);
-            }
-            Rule::field => {
-                fields.push(StructItem::Field(parse_field(pair)));
-            }
-            Rule::tag => {
-                fields.push(StructItem::Tag(parse_tag(pair)));
-            }
-            r => unreachable!("unhandled rule: {:#?}", r),
-        }
-    }
-    Structure {
-        pos: Pos { line, col },
-        doc,
-        name,
-        fields,
-    }
-}
-
 fn parse_choice_item_value(pair: Pair<Rule>) -> ChoiceItem {
     let mut doc = String::new();
     let mut name = TypeTag {
@@ -403,82 +375,6 @@ fn parse_choice_item_wrap(pair: Pair<Rule>) -> ChoiceItem {
     ChoiceItem::Wrap { doc, name, field, target }
 }
 
-fn parse_choice_item (pair: Pair<Rule>) -> ChoiceItem {
-    let mut parsed_doc = String::new();
-    let mut choice = ChoiceItem::Nil;
-    for pair in pair.into_inner() {
-        match pair.as_rule() {
-            Rule::doc => {
-                parsed_doc = pair.as_str().to_string();
-            }
-            Rule::type_tag => {
-                choice = ChoiceItem::TypeTag{ doc: parsed_doc.clone(), choice: parse_type_tag(pair) };
-            }
-            Rule::structure => {
-                choice = ChoiceItem::Structure(parse_structure(pair));
-            }
-            Rule::choice_item_value => {
-                choice = parse_choice_item_value(pair);
-            }
-            Rule::choice_item_wrap => {
-                choice = parse_choice_item_wrap(pair);
-            }
-            r => unreachable!("unhandled rule: {:#?}", r),
-        }
-    }
-    match &mut choice {
-        ChoiceItem::TypeTag { doc , .. } => {
-            *doc = parsed_doc;
-        }
-        _ => {}
-    }
-    return choice;
-}
-
-fn parse_choice(pair: Pair<Rule>) -> Choice {
-    let mut doc = String::new();
-    let mut name: TypeTag = TypeTag {
-        pos: Pos { line: 0, col: 0 },
-        name: String::new(),
-        args: Vec::new(),
-    };
-    let (mut line, mut col) = (0, 0);
-    let mut fields = Vec::new();
-    let mut choices = Vec::new();
-
-    for pair in pair.into_inner() {
-        (line, col) = pair.as_span().start_pos().line_col();
-        match pair.as_rule() {
-            Rule::doc => {
-                doc = pair.as_str().to_string();
-            }
-            Rule::choice_name => {
-                for pp in pair.into_inner() {
-                    match pp.as_rule() {
-                        Rule::type_tag => {
-                            name = parse_type_tag(pp);
-                        }
-                        r => unreachable!("unhandled rule: {:#?}", r),
-                    }
-                }
-            }
-            Rule::field => {
-                fields.push(parse_field(pair));
-            }
-            Rule::choice_item => {
-                choices.push(parse_choice_item(pair));
-            }
-            r => unreachable!("unhandled rule: {:#?}", r),
-        }
-    }
-    Choice {
-        pos: Pos { line, col },
-        doc,
-        name,
-        fields,
-        choices,
-    }
-}
 
 fn parse_method(pair: Pair<Rule>) -> Method {
     let mut doc = String::new();
@@ -668,60 +564,211 @@ fn parse_http_service(pair: Pair<Rule>) -> HttpService {
     }
 }
 
-fn parse_namespace(pair: Pair<Rule>) -> Nspace {
-    let mut name = String::new();
-    let (line, col) = pair.as_span().start_pos().line_col();
-    let mut items: Vec<NspaceItem> = Vec::new();
-    pair.into_inner().for_each(|entity| {
-        match entity.as_rule() {
-            Rule::nspace_name => {
-                name = entity.as_str().to_string();
-            }
-            Rule::nspace => {
-                items.push(NspaceItem::Nspace(parse_namespace(entity)));
-            }
-            Rule::structure => {
-                items.push(NspaceItem::Structure(parse_structure(entity)));
-            }
-            Rule::choice => {
-                items.push(NspaceItem::Choice(parse_choice(entity)));
-            }
-            Rule::service => {
-                items.push(NspaceItem::Service(parse_service(entity)));
-            }
-            Rule::http_service => {
-                items.push(NspaceItem::HttpService(parse_http_service(entity)));
-            }
-            r => unreachable!("unhandled rule: {:#?}", r),
-        }
-    });
-    Nspace {
-        pos: Pos { line, col },
-        name,
-        items,
+use crate::error::IozhError;
+
+trait ResultExt<T> {
+    fn to_iozh(self) -> Result<T, IozhError>;
+}
+
+trait UnhandledRuleHelper<T> {
+    fn unhandled(self) -> Result<T, IozhError>;
+}
+
+impl <T> UnhandledRuleHelper<T> for Rule {
+    fn unhandled(self) -> Result<T, IozhError> {
+        Err(IozhError {
+            pos: Pos { line: 0, col: 0 },
+            msg: format!("Unhandled parser rule: {:#?}", self),
+        })
     }
 }
 
-pub fn parse_project(tree: Pairs<Rule>) -> Project {
-    let mut nspaces: Vec<Nspace> = Vec::new();
-    tree.for_each(|project| {
-        let nss = project.into_inner();
-        nss.for_each(|ns| {
-            match ns.as_rule() {
+impl <A, E> ResultExt<A> for Result<A, pest::error::Error<E>> where E: pest::RuleType {
+    fn to_iozh(self) -> Result<A, IozhError> {
+        self.map_err(|e| {
+            let (line, col) = match e.line_col {
+                pest::error::LineColLocation::Pos((l, c)) => (l, c),
+                pest::error::LineColLocation::Span((l, c), _) => (l, c),
+            };
+            IozhError {
+                pos: Pos { line, col },
+                msg: format!("Failed to parse: {}", e),
+            }
+        })
+    }
+}
+
+impl <'a> From<&Pair<'a, Rule>> for Pos {
+    fn from(value: &Pair<'a, Rule>) -> Self {
+        let (line, col) = value.as_span().start_pos().line_col();
+        Pos { line, col }
+    }
+}
+
+impl Project {
+
+    pub fn parse(source: &str) -> Result<Project, IozhError> {
+        let mut project = Project::new();
+        let ast: Pairs<Rule> = Iozh::parse(Rule::project, source).to_iozh()?;
+        project.parse_project(ast)?;
+        Ok(project)
+    }
+
+    fn parse_project(&mut self, pair: Pairs<Rule>) -> Result<(), IozhError> {
+        let mut nspaces: Vec<Nspace> = Vec::new();
+        for project in pair {
+            for ns in project.into_inner() {
+                match ns.as_rule() {
+                    Rule::nspace => {
+                        let nspace = self.parse_namespace(ns)?;
+                        nspaces.push(nspace);
+                    }
+                    r => r.unhandled()?
+                }
+            }
+        }
+        self.nspaces = nspaces;
+        Ok(())
+    }
+
+    fn parse_namespace(&mut self, pair: Pair<Rule>) -> Result<Nspace, IozhError> {
+        let mut name = String::new();
+        let mut items: Vec<NspaceItem> = Vec::new();
+        let pos = Pos::from(&pair);
+        for pair in pair.into_inner() {
+            match pair.as_rule() {
+                Rule::nspace_name => {
+                    name = pair.as_str().to_string();
+                }
                 Rule::nspace => {
-                    nspaces.push(parse_namespace(ns));
+                    let nspace = self.parse_namespace(pair)?;
+                    items.push(NspaceItem::Nspace(nspace));
+                }
+                Rule::structure => {
+                    let s = self.parse_structure(pair)?;
+                    items.push(NspaceItem::Structure(s));
+                }
+                Rule::choice => {
+                    let idx = self.parse_choice(pair)?;
+                    items.push(NspaceItem::Choice(idx));
+                }
+                Rule::service => {
+                    items.push(NspaceItem::Service(parse_service(pair)));
+                }
+                Rule::http_service => {
+                    items.push(NspaceItem::HttpService(parse_http_service(pair)));
                 }
                 r => unreachable!("unhandled rule: {:#?}", r),
             }
+        }
+        Ok(Nspace {
+            pos,
+            name,
+            items,
         })
-    });
-    Project {
-        pos: Pos { line: 0, col: 0 },
-        nspaces: nspaces,
     }
-}
 
-pub fn parse(source: &str) -> Result<Project, Error<Rule>> {
-    let ast: Pairs<Rule> = Iozh::parse(Rule::project, source)?;
-    Ok(parse_project(ast))
+    fn parse_structure(&mut self, pair: Pair<Rule>) -> Result<Idx, IozhError> {
+        let mut name = TypeTag::default();
+        let mut doc = String::new();
+        let mut fields = Vec::new();
+        let pos = Pos::from(&pair);
+        for pair in pair.into_inner() {
+            match pair.as_rule() {
+                Rule::doc => {
+                    doc = pair.as_str().to_string();
+                }
+                Rule::type_tag => {
+                    name = parse_type_tag(pair);
+                }
+                Rule::field => {
+                    fields.push(StructItem::Field(parse_field(pair)));
+                }
+                Rule::tag => {
+                    fields.push(StructItem::Tag(parse_tag(pair)));
+                }
+                r => unreachable!("unhandled rule: {:#?}", r),
+            }
+        }
+        Ok(self.new_structure(Structure {
+            pos,
+            doc,
+            name,
+            fields,
+        }))
+    }
+
+    fn parse_choice_item (&mut self, pair: Pair<Rule>) -> Result<ChoiceItem, IozhError> {
+        let mut parsed_doc = String::new();
+        let mut item = ChoiceItem::Nil;
+        for pair in pair.into_inner() {
+            match pair.as_rule() {
+                Rule::doc => {
+                    parsed_doc = pair.as_str().to_string();
+                }
+                Rule::type_tag => {
+                    item = ChoiceItem::TypeTag{ doc: parsed_doc.clone(), choice: parse_type_tag(pair) };
+                }
+                Rule::structure => {
+                    let idx = self.parse_structure(pair)?;
+                    item = ChoiceItem::Structure(idx);
+                }
+                Rule::choice_item_value => {
+                    item = parse_choice_item_value(pair);
+                }
+                Rule::choice_item_wrap => {
+                    item = parse_choice_item_wrap(pair);
+                }
+                r => unreachable!("unhandled rule: {:#?}", r),
+            }
+        }
+        match &mut item {
+            ChoiceItem::TypeTag { doc , .. } => {
+                *doc = parsed_doc;
+            }
+            _ => {}
+        }
+        Ok(item)
+    }
+
+    fn parse_choice(&mut self, pair: Pair<Rule>) -> Result<Idx, IozhError> {
+        let mut doc = String::new();
+        let mut name: TypeTag = TypeTag::default();
+        let mut fields = Vec::new();
+        let mut choices = Vec::new();
+        let pos = Pos::from(&pair);
+        for pair in pair.into_inner() {
+            match pair.as_rule() {
+                Rule::doc => {
+                    doc = pair.as_str().to_string();
+                }
+                Rule::choice_name => {
+                    for pp in pair.into_inner() {
+                        match pp.as_rule() {
+                            Rule::type_tag => {
+                                name = parse_type_tag(pp);
+                            }
+                            r => unreachable!("unhandled rule: {:#?}", r),
+                        }
+                    }
+                }
+                Rule::field => {
+                    fields.push(parse_field(pair));
+                }
+                Rule::choice_item => {
+                    let choice_item = self.parse_choice_item(pair)?;
+                    choices.push(choice_item);
+                }
+                r => unreachable!("unhandled rule: {:#?}", r),
+            }
+        }
+        Ok(self.new_choice(Choice {
+            pos,
+            doc,
+            name,
+            fields,
+            choices,
+        }))
+    }
+
 }

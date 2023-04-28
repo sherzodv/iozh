@@ -1,8 +1,232 @@
-use crate::ast;
-use crate::lang::scala2::*;
-use crate::lang::scala2::utils::*;
-use crate::lang::scala2::gen_circe::*;
+use std::fs;
+use std::io::Write;
+use std::path::Path;
+use std::path::PathBuf;
+use std::collections::HashMap;
+use itertools::Itertools;
+use iozh_parse::ast;
+use iozh_parse::error::IozhError;
+use crate::utils::*;
+use crate::context::*;
+use crate::gen_circe::*;
 
+#[derive(Debug)]
+pub struct GenResult {
+    pub unit: Option<String>,
+    pub content: String,
+    pub imports: Vec<String>,
+    pub package: Vec<String>,
+    pub block: Option<String>,
+}
+
+impl GenResult {
+    pub fn empty() -> Result<Vec<GenResult>, IozhError> {
+        Ok(vec![])
+    }
+    pub fn single(content: String) -> Result<Vec<GenResult>, IozhError> {
+        Ok(vec![
+            GenResult {
+                unit: None,
+                content: content,
+                imports: vec![],
+                package: vec![],
+                block: None,
+            }
+        ])
+    }
+}
+
+pub trait FileWriter {
+    fn put(& mut self, content: &str) -> std::result::Result<(), IozhError>;
+    fn putln(& mut self, content: &str) -> std::result::Result<(), IozhError>;
+    fn putlnln(& mut self, content: &str) -> std::result::Result<(), IozhError>;
+    fn ln(& mut self) -> std::result::Result<(), IozhError>;
+}
+
+impl FileWriter for std::fs::File {
+    fn put(& mut self, content: &str) -> std::result::Result<(), IozhError> {
+        self.write_all(content.as_bytes())
+            .map_err(|e| IozhError {
+                pos: ast::Pos { line: 0, col: 0},
+                msg: format!("Failed to write file: {}", e),
+            })
+    }
+    fn ln(& mut self) -> std::result::Result<(), IozhError> {
+        self.write_all("\n".as_bytes()).map_err(|e| IozhError {
+            pos: ast::Pos { line: 0, col: 0},
+            msg: format!("Failed to write file: {}", e),
+        })
+    }
+    fn putln(& mut self, content: &str) -> std::result::Result<(), IozhError> {
+        self.put(&content)?;
+        self.ln()
+    }
+    fn putlnln(& mut self, content: &str) -> std::result::Result<(), IozhError> {
+        self.put(&content)?;
+        self.ln()?;
+        self.ln()
+    }
+}
+
+pub fn group(items: Vec<GenResult>) -> Vec<GenResult> {
+    let mut m = HashMap::<String, GenResult>::new();
+    for mut item in items {
+        let mut key: String = item.unit.clone().unwrap_or_else(|| "".to_string());
+        key.push_str(&item.block.iter().map(|x| x.to_string()).join(""));
+        if let Some(existing) = m.get_mut(&key) {
+            existing.content.push_str("\n");
+            existing.content.push_str(&item.content);
+            existing.imports.append(&mut item.imports);
+        } else {
+            m.insert(key, item);
+        }
+    }
+    m.into_iter()
+        .map(|(_, mut v)| {
+            let imports = v.imports.clone().into_iter().sorted().unique();
+            v.imports.clear();
+            v.imports.extend(imports);
+            v
+        })
+        .collect::<Vec<_>>()
+}
+
+pub fn write_fs_tree(items: Vec<GenResult>, target_folder: &Path) -> std::result::Result<(), IozhError> {
+    let grouped_items = group(items);
+    for item in grouped_items {
+        let rel_package_path = item.package
+            .iter()
+            .fold(PathBuf::new(), |mut acc, package| {
+                acc.push(fs_sanitize(package));
+                acc
+            });
+        let abs_package_path = target_folder.join(rel_package_path);
+        fs::create_dir_all(&abs_package_path).to_iozh()?;
+        if let Some(unit) = &item.unit {
+            let file_name = gen_filename(unit);
+            let file_path = abs_package_path.as_path().join(file_name);
+            let mut file = fs::File::create(abs_package_path.join(file_path)).to_iozh()?;
+            file.putlnln(&format!("package {}", item.package.join(".")))?;
+            if !item.imports.is_empty() {
+                for import in &item.imports {
+                    file.putln(&format!("import {}", import))?;
+                }
+                file.ln()?;
+            }
+            if let Some(block) = &item.block {
+                file.putln(&format!("{block} {{"))?;
+                file.putln(&item.content)?;
+                file.putln(&format!("}}"))?;
+            } else {
+                file.put(&item.content)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+pub fn imports_for(type_name: &str) -> Vec<String> {
+    match type_name {
+        "Instant" => vec!["java.time.Instant".to_string()],
+        "Duration" => vec!["scala.concurrent.duration.Duration".to_string()],
+        "FiniteDuration" => vec!["scala.concurrent.duration.FiniteDuration".to_string()],
+        "File" => vec!["java.io.File".to_string()],
+        _ => vec![],
+    }
+}
+
+pub fn map_type(name: &str) -> &str {
+    match name {
+        "I32" => "Int",
+        "I64" => "Long",
+        "F32" => "Float",
+        "F64" => "Double",
+        "Bool" => "Boolean",
+        "DateTime" => "Instant",
+        "Duration" => "Duration",
+        x => x,
+    }
+}
+
+pub fn fs_sanitize(name: &str) -> String {
+  let invalid_chars = "\\/:?\"<>|*";
+  let safe_sym = '_';
+  name.chars()
+      .map(|c| if invalid_chars.contains(c) { safe_sym } else { c })
+      .collect()
+}
+
+pub fn gen_filename(name: &str) -> String {
+    format!("{}.scala", fs_sanitize(name))
+}
+
+pub fn sanitize(name: &str) -> String {
+    let keywords = [
+        "abstract",
+        "case",
+        "catch",
+        "class",
+        "def",
+        "do",
+        "else",
+        "extends",
+        "false",
+        "final",
+        "finally",
+        "for",
+        "forSome",
+        "if",
+        "implicit",
+        "import",
+        "lazy",
+        "match",
+        "new",
+        "null",
+        "object",
+        "override",
+        "package",
+        "private",
+        "protected",
+        "return",
+        "sealed",
+        "super",
+        "this",
+        "throw",
+        "trait",
+        "try",
+        "true",
+        "type",
+        "val",
+        "var",
+        "while",
+        "with",
+        "yield",
+    ];
+
+    let mut chars = name.chars();
+    let is_valid_start = |c: char| c.is_alphabetic() || c == '_';
+    let is_valid_char = |c: char| c.is_alphanumeric() || c == '_';
+
+    if let Some(c) = chars.next() {
+        if !is_valid_start(c) {
+            return format!("`{}`", name);
+        }
+
+        for c in chars {
+            if !is_valid_char(c) {
+                return format!("`{}`", name);
+            }
+        }
+
+        if keywords.contains(&name) {
+            return format!("`{}`", name);
+        }
+
+        name.to_string()
+    } else {
+        format!("`{}`", name)
+    }
+}
 pub trait GenItems<A> {
     fn mapg<G>(&self, g: G) -> Result<Vec<GenResult>, IozhError>
     where
@@ -56,17 +280,17 @@ impl GenResults for Vec<GenResult> {
     }
 }
 
-impl ProjectContext {
+impl <'a> ProjectContext<'a> {
     pub fn push_nspace(&self, nspace: &ast::Nspace) -> NspaceContext {
         let nspace_name = &nspace.name;
         NspaceContext {
-            project: self.clone(),
+            project: self,
             path: vec![ nspace_name.to_string() ],
         }
     }
 }
 
-impl NspaceContext {
+impl <'a> NspaceContext<'a> {
     pub fn push_nspace(&self, nspace: &ast::Nspace) -> NspaceContext {
         let nspace_name = &nspace.name;
         let mut nspace = self.path.clone();
@@ -81,19 +305,19 @@ impl NspaceContext {
         let full_type_name = s.name.gen()?.to_string();
         let type_args = gen_type_args(&s.name.args)?;
         Ok(StructContext {
-            nspace: self.clone(),
+            nspace: self,
             base_name,
             full_type_name,
             type_args,
         })
     }
-    pub fn push_choice<'a>(&'a self, c: &'a ast::Choice) -> Result<ChoiceContext, IozhError> {
+    pub fn push_choice(&'a self, c: &'a ast::Choice) -> Result<ChoiceContext, IozhError> {
         let base_name = sanitize(&c.name.name);
         let full_type_name = c.name.gen()?.to_string();
-        let tag_opt = c.get_most_common_tag_key();
+        let tag_opt = c.get_most_common_tag_key(&self.project.p);
         Ok(ChoiceContext {
+            nspace: self,
             p: c,
-            nspace: self.clone(),
             base_name,
             full_type_name,
             most_common_tag_key: tag_opt,
@@ -103,7 +327,7 @@ impl NspaceContext {
         let base_name = sanitize(&s.name.name);
         let full_type_name = s.name.gen()?.to_string();
         Ok(ServiceContext {
-            nspace: self.clone(),
+            nspace: self,
             base_name,
             full_type_name,
         })
@@ -112,7 +336,7 @@ impl NspaceContext {
         let base_name = sanitize(&s.name.name);
         let full_type_name = s.name.gen()?.to_string();
         Ok(HttpServiceContext {
-            nspace: self.clone(),
+            nspace: self,
             base_name,
             full_type_name,
         })
@@ -133,11 +357,10 @@ impl <'a> ChoiceContext<'a> {
     }
 }
 
-impl ServiceContext {
+impl <'a> ServiceContext<'a> {
     pub fn push_method(&self, m: &ast::Method) -> MethodContext {
         let method_name = m.name.name.clone();
         MethodContext {
-            service: self.clone(),
             name: method_name,
         }
     }
@@ -189,7 +412,10 @@ impl Gen for ast::TypePath {
 impl InChoice for ast::ChoiceItem {
     fn gen_in_choice(&self, parent: &ChoiceContext) -> Result<Vec<GenResult>, IozhError> {
         match self {
-            ast::ChoiceItem::Structure(v) => v.gen_in_choice(&parent),
+            ast::ChoiceItem::Structure(idx) => {
+                let s = parent.nspace.project.p.get_structure(*idx)?;
+                s.gen_in_choice(&parent)
+            }
             ast::ChoiceItem::TypeTag { doc: _, choice } => {
                 let choice_content = choice.gen()?.map_content().join("\n");
                 GenResult::single(format!("case object {} extends {}", choice_content, parent.base_name))
@@ -250,7 +476,7 @@ impl InNspace for ast::Choice {
                 unit,
                 content: format!("{}\n{}", header, body),
                 imports,
-                package: scope.nspace.path,
+                package: scope.nspace.path.clone(),
                 block: None,
             }
         );
@@ -326,7 +552,7 @@ impl InChoice for ast::Structure {
                 unit: None,
                 content,
                 imports,
-                package: scope.nspace.path,
+                package: scope.nspace.path.clone(),
                 block: None,
             }
         ])
@@ -354,7 +580,7 @@ impl InNspace for ast::Structure {
                 unit,
                 content: format!("case class {}({fields})", scope.full_type_name),
                 imports,
-                package: scope.nspace.path,
+                package: scope.nspace.path.clone(),
                 block: None,
             }
         );
@@ -385,7 +611,7 @@ impl InNspace for ast::Service {
                 unit,
                 content: content,
                 imports,
-                package: scope.nspace.path,
+                package: scope.nspace.path.clone(),
                 block: None,
             }
         ])
@@ -415,8 +641,14 @@ impl InNspace for ast::HttpService {
 impl InNspace for ast::NspaceItem {
     fn gen_in_nspace(&self, parent: &NspaceContext) -> Result<Vec<GenResult>, IozhError> {
         match self {
-            ast::NspaceItem::Structure(v) => v.gen_in_nspace(parent),
-            ast::NspaceItem::Choice(v) => v.gen_in_nspace(parent),
+            ast::NspaceItem::Structure(idx) => {
+                let s = parent.project.p.get_structure(*idx)?;
+                s.gen_in_nspace(parent)
+            }
+            ast::NspaceItem::Choice(idx) => {
+                let c = parent.project.p.get_choice(*idx)?;
+                c.gen_in_nspace(parent)
+            }
             ast::NspaceItem::Service(v) => v.gen_in_nspace(parent),
             ast::NspaceItem::HttpService(v) => v.gen_in_nspace(parent),
             ast::NspaceItem::Nspace(v) => v.gen_in_nspace(parent),
@@ -438,12 +670,10 @@ impl InProject for ast::Nspace {
     }
 }
 
-impl ast::Project {
-    pub fn generate(&self, target_folder: &std::path::Path) -> Result<(), IozhError> {
-        let scope = ProjectContext {};
-        let mut items = self.nspaces.mapg(|x| x.gen_in_project(&scope))?;
-        let mut circe_items = circe_pack(&scope)?;
-        items.append(&mut circe_items);
-        write_fs_tree(items, target_folder)
-    }
+pub fn generate(project: ast::Project, target_folder: &std::path::Path) -> Result<(), IozhError> {
+    let scope = ProjectContext { p: &project };
+    let mut items = project.nspaces.mapg(|x| x.gen_in_project(&scope))?;
+    let mut circe_items = circe_pack(&scope)?;
+    items.append(&mut circe_items);
+    write_fs_tree(items, target_folder)
 }

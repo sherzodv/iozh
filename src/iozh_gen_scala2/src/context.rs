@@ -1,69 +1,53 @@
-mod utils;
-mod loc;
-pub mod gen;
-pub mod gen_circe;
+use iozh_parse::ast;
+use iozh_parse::error::IozhError;
 
-use crate::ast;
-use crate::lang::scala2::loc::Loc;
+use crate::loc::*;
+use crate::gen::*;
 
-pub struct GenResult {
-    unit: Option<String>,
-    content: String,
-    imports: Vec<String>,
-    package: Vec<String>,
-    block: Option<String>,
+#[derive(Debug)]
+pub struct ProjectContext<'a> {
+    pub p: &'a ast::Project,
 }
 
-#[derive(Debug, Clone)]
-pub struct ProjectContext {
+#[derive(Debug)]
+pub struct NspaceContext<'a> {
+    pub project: &'a ProjectContext<'a>,
+    pub path: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
-pub struct NspaceContext {
-    project: ProjectContext,
-    path: Vec<String>,
-}
-
-#[derive(Debug, Clone)]
-pub struct StructContext {
-    pub nspace: NspaceContext,
+#[derive(Debug)]
+pub struct StructContext<'a> {
+    pub nspace: &'a NspaceContext<'a>,
     pub base_name: String,
     pub full_type_name: String,
     pub type_args: Vec<String>,
 }
 
 pub struct ChoiceContext<'a> {
-    p: &'a ast::Choice,
-    nspace: NspaceContext,
-    base_name: String,
-    full_type_name: String,
-    most_common_tag_key: Option<String>,
+    pub nspace: &'a NspaceContext<'a>,
+    pub p: &'a ast::Choice,
+    pub base_name: String,
+    pub full_type_name: String,
+    pub most_common_tag_key: Option<String>,
 }
 
-#[derive(Debug, Clone)]
-pub struct ServiceContext {
-    pub nspace: NspaceContext,
+#[derive(Debug)]
+pub struct ServiceContext<'a> {
+    pub nspace: &'a NspaceContext<'a>,
     pub base_name: String,
     pub full_type_name: String,
 }
 
-pub struct HttpServiceContext {
-    pub nspace: NspaceContext,
+pub struct HttpServiceContext<'a> {
+    pub nspace: &'a NspaceContext<'a>,
     pub base_name: String,
     pub full_type_name: String,
 }
 
 pub struct MethodContext {
-    pub service: ServiceContext,
     pub name: String,
 }
 
-
-#[derive(Debug)]
-pub struct IozhError {
-    pub pos: ast::Pos,
-    pub msg: String,
-}
 
 pub trait Gen where Self: Loc, Self: std::fmt::Debug {
     fn gen(&self) -> std::result::Result<Vec<GenResult>, IozhError>;

@@ -1,8 +1,6 @@
-#[derive(Parser)]
-#[grammar = "iozh.pest"]
-pub struct Iozh;
+pub type Idx = usize;
 
-#[derive(Clone)]
+#[derive(Default, Clone)]
 pub struct Pos {
     pub line: usize,
     pub col: usize,
@@ -15,7 +13,7 @@ pub enum Literal {
     Nil,
 }
 
-#[derive(Clone)]
+#[derive(Default, Clone)]
 pub struct TypeTag {
     pub pos: Pos,
     pub name: String,
@@ -60,7 +58,7 @@ pub struct Structure {
 pub enum ChoiceItem {
     Nil,
     TypeTag{ doc: String, choice: TypeTag },
-    Structure(Structure),
+    Structure(Idx),
     Value{ doc: String, name: TypeTag, value: Literal },
     Wrap{ doc: String, name: TypeTag, field: String, target: TypePath },
 }
@@ -119,8 +117,8 @@ pub struct HttpService {
 }
 
 pub enum NspaceItem {
-    Structure(Structure),
-    Choice(Choice),
+    Structure(Idx),
+    Choice(Idx),
     Service(Service),
     HttpService(HttpService),
     Nspace(Nspace),
@@ -133,8 +131,44 @@ pub struct Nspace {
     pub items: Vec<NspaceItem>,
 }
 
-#[derive(Debug)]
+#[derive(Default, Debug)]
 pub struct Project {
     pub pos: Pos,
     pub nspaces: Vec<Nspace>,
+    structures: Vec<Structure>,
+    choices: Vec<Choice>,
+}
+
+use crate::error::IozhError;
+
+impl Project {
+    pub fn new() -> Project {
+        Self::default()
+    }
+
+    pub fn new_structure(&mut self, s: Structure) -> Idx {
+        self.structures.push(s);
+        self.structures.len() - 1
+    }
+
+    pub fn new_choice(&mut self, c: Choice) -> Idx {
+        self.choices.push(c);
+        self.choices.len() - 1
+    }
+
+    pub fn get_structure(&self, idx: Idx) -> Result<&Structure, IozhError> {
+        if idx >= self.structures.len() {
+            Err(IozhError::from(format!("Wrong structure index: {idx}")))
+        } else {
+            Ok(&self.structures[idx])
+        }
+    }
+
+    pub fn get_choice(&self, idx: Idx) -> Result<&Choice, IozhError> {
+        if idx >= self.structures.len() {
+            Err(IozhError::from(format!("Wrong choice index: {idx}")))
+        } else {
+            Ok(&self.choices[idx])
+        }
+    }
 }

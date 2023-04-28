@@ -1,16 +1,4 @@
-[package]
-name = "iozh"
-version = "0.1.0"
-edition = "2018"
-
-[dependencies]
-bumpalo = "3.12.0"
-lasso = "0.7.0"
-itertools = "0.10.5"
-stripmargin = "0.1.1"
-quote = "1.0.26"
-clap = { version = "4.2.1", features = ["derive"] }
-pest = "2.5.5"
-pest_derive = "2.5.5"
-pest_generator = "2.5.5"
-pest_meta = "2.5.5"
+[workspace]
+members = [
+  "src/iozh"
+]

@@ -1,9 +1,10 @@
-use crate::ast;
-use crate::lang::scala2::*;
-use crate::lang::scala2::utils::*;
-use crate::lang::scala2::gen::*;
-
 use stripmargin::StripMargin;
+use iozh_parse::ast;
+use iozh_parse::error::IozhError;
+
+use crate::gen::*;
+use crate::context::*;
+use crate::utils::ResultVec;
 
 pub fn circe_pack(_project: &ProjectContext) -> std::result::Result<Vec<GenResult>, IozhError> {
     let content = r#"
@@ -178,6 +179,7 @@ fn encoder_for_struct(s: &ast::Structure, ctx: &NspaceContext, parent: Option<&C
 }
 
 fn decoder_for_choice_in_nspace(c: &ast::Choice, path: &str, parent: &NspaceContext) -> std::result::Result<Vec<GenResult>, IozhError> {
+    let project = &parent.project.p;
     let scope = parent.push_choice(c)?;
     let name = if path.len() > 0 {
         path.to_owned() + "." + &scope.base_name
@@ -197,19 +199,23 @@ fn decoder_for_choice_in_nspace(c: &ast::Choice, path: &str, parent: &NspaceCont
         })
         .map(|x| {
             let type_name = match x {
-                ast::ChoiceItem::Structure(s) => s.name.name.clone(),
-                ast::ChoiceItem::TypeTag{ doc: _, choice } => choice.name.clone(),
-                ast::ChoiceItem::Value{doc: _, name, value: _ } => name.name.clone(),
-                ast::ChoiceItem::Wrap{doc: _, name, field: _, target: _ } => name.name.clone(),
-                _ => "ERROR_CHOICE_ITEM".to_string(),
+                ast::ChoiceItem::Structure(idx) => {
+                    project.get_structure(*idx).map(|s| s.name.name.clone())
+                }
+                ast::ChoiceItem::TypeTag{ doc: _, choice } => Ok(choice.name.clone()),
+                ast::ChoiceItem::Value{doc: _, name, value: _ } => Ok(name.name.clone()),
+                ast::ChoiceItem::Wrap{doc: _, name, field: _, target: _ } => Ok(name.name.clone()),
+                _ => Err(IozhError::from("ERROR_CHOICE_ITEM".to_string())),
             };
-            (x, type_name)
+            type_name.map(|tn| (x, tn))
         })
+        .collect::<Result<Vec<_>, IozhError>>()?
+        .iter()
         .map(|(x, type_name)| {
             if let Some(tag_key) = &scope.most_common_tag_key {
                 let path = &scope.base_name;
                 let name = format!("{path}.{type_name}");
-                let tag_value = x.get_tag_value(tag_key);
+                let tag_value = x.get_tag_value(tag_key, project);
                 format!(r#"case {tag_value} => Decoder[{name}]"#)
             } else {
                 let path = &scope.base_name;
@@ -249,6 +255,7 @@ fn decoder_for_choice_in_nspace(c: &ast::Choice, path: &str, parent: &NspaceCont
 }
 
 fn encoder_for_choice_in_nspace(c: &ast::Choice, path: &str, parent: &NspaceContext) -> std::result::Result<Vec<GenResult>, IozhError> {
+    let project = &parent.project.p;
     let scope = parent.push_choice(c)?;
     let name = if path.len() > 0 {
         path.to_owned() + "." + &scope.base_name
@@ -268,18 +275,22 @@ fn encoder_for_choice_in_nspace(c: &ast::Choice, path: &str, parent: &NspaceCont
         })
         .map(|x| {
             let nn = match x {
-                ast::ChoiceItem::Structure(s) => s.name.name.clone(),
-                ast::ChoiceItem::TypeTag{ doc: _, choice } => choice.name.clone() + ".type",
-                ast::ChoiceItem::Value{doc: _, name, value: _ } => name.name.clone() + ".type",
-                ast::ChoiceItem::Wrap{doc: _, name, field: _, target: _ } => name.name.clone(),
-                _ => "ERROR_CHOICE_ITEM".to_string(),
+                ast::ChoiceItem::Structure(idx) => {
+                    project.get_structure(*idx).map(|s| s.name.name.clone())
+                }
+                ast::ChoiceItem::TypeTag{ doc: _, choice } => Ok(choice.name.clone() + ".type"),
+                ast::ChoiceItem::Value{doc: _, name, value: _ } => Ok(name.name.clone() + ".type"),
+                ast::ChoiceItem::Wrap{doc: _, name, field: _, target: _ } => Ok(name.name.clone()),
+                _ => Err(IozhError::from("ERROR_CHOICE_ITEM".to_string())),
             };
-            (x, nn)
+            nn.map(|nnn| (x, nnn))
         })
+        .collect::<Result<Vec<_>, IozhError>>()?
+        .iter()
         .map(|(x, type_name)| {
             let path = &scope.base_name;
             let postfix = if let Some(tag_key) = &scope.most_common_tag_key {
-                let tag_value = x.get_tag_value(tag_key);
+                let tag_value = x.get_tag_value(tag_key, project);
                 format!(r#".mapObject(_.add("{tag_key}", Json.fromString({tag_value})))"#)
             } else {
                 "".to_string()
@@ -387,7 +398,6 @@ impl CirceInNspace for ast::Structure {
     }
 
     fn codec_in_nspace(&self, parent: &NspaceContext) -> std::result::Result<Vec<GenResult>, IozhError> {
-        let scope = parent.push_struct(self)?;
         let decoder_res = self.decoder_in_nspace(&parent)?;
         let encoder_res = self.encoder_in_nspace(&parent)?;
         let decoder = decoder_res.into_iter().map(|x| x.content).collect::<Vec<_>>().join("\n");
@@ -404,7 +414,7 @@ impl CirceInNspace for ast::Structure {
                     "io.circe.syntax._".to_string(),
                     "io.circe.Json".to_string(),
                 ],
-                package: scope.nspace.path,
+                package: parent.path.clone(),
                 block: Some("object CirceImplicits".to_string()),
             }
         ])
@@ -425,7 +435,8 @@ impl CirceInChoice for ast::Structure {
 impl CirceInChoice for ast::ChoiceItem {
     fn decoder_in_choice(&self, parent: &ChoiceContext) -> std::result::Result<Vec<GenResult>, IozhError> {
         match self {
-            ast::ChoiceItem::Structure(s) => {
+            ast::ChoiceItem::Structure(idx) => {
+                let s = parent.nspace.project.p.get_structure(*idx)?;
                 s.decoder_in_choice(&parent)
             }
             ast::ChoiceItem::TypeTag{ doc: _, choice } => {
@@ -498,7 +509,8 @@ impl CirceInChoice for ast::ChoiceItem {
 
     fn encoder_in_choice(&self, parent: &ChoiceContext) -> std::result::Result<Vec<GenResult>, IozhError> {
         match self {
-            ast::ChoiceItem::Structure(s) => {
+            ast::ChoiceItem::Structure(idx) => {
+                let s = parent.nspace.project.p.get_structure(*idx)?;
                 s.encoder_in_choice(&parent)
             }
             ast::ChoiceItem::TypeTag{ doc: _, choice } => {
@@ -588,7 +600,7 @@ impl CirceInNspace for ast::Choice {
             .iter_mut()
             .for_each(|res| {
                 res.unit = unit.clone();
-                res.package = scope.nspace.path.clone();
+                res.package = parent.path.clone();
                 res.block = Some("object CirceImplicits".to_string());
             });
         let mut items_encoders = self.choices
@@ -603,7 +615,7 @@ impl CirceInNspace for ast::Choice {
             .iter_mut()
             .for_each(|res| {
                 res.unit = unit.clone();
-                res.package = scope.nspace.path.clone();
+                res.package = parent.path.clone();
                 res.block = Some("object CirceImplicits".to_string());
             });
         let body = GenResult {
@@ -614,7 +626,7 @@ impl CirceInNspace for ast::Choice {
                 "io.circe.Encoder".to_string(),
                 "cats.syntax.functor._".to_string(),
             ],
-            package: scope.nspace.path,
+            package: parent.path.clone(),
             block: Some("object CirceImplicits".to_string()),
         };
         items_decoders.append(&mut items_encoders);

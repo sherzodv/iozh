@@ -1,4 +1,4 @@
-use crate::ast;
+use iozh_parse::ast;
 
 pub trait Loc {
     fn get_pos(&self) -> ast::Pos;
@@ -28,13 +28,7 @@ impl Loc for ast::TypePath {
 
 impl Loc for ast::ChoiceItem {
     fn get_pos(&self) -> ast::Pos {
-        match self {
-            ast::ChoiceItem::Structure(v) => v.get_pos(),
-            ast::ChoiceItem::TypeTag { doc: _, choice } => choice.get_pos(),
-            ast::ChoiceItem::Value { doc: _, name, value: _ } => name.get_pos(),
-            ast::ChoiceItem::Nil => ast::Pos{ line: 0, col: 0 },
-            ast::ChoiceItem::Wrap { doc: _, name: _, field: _, target: _ } => ast::Pos{ line: 0, col: 0 }
-        }
+        todo!()
     }
 }
 
@@ -91,13 +85,7 @@ impl Loc for ast::HttpService {
 
 impl Loc for ast::NspaceItem {
     fn get_pos(&self) -> ast::Pos {
-        match self {
-            ast::NspaceItem::Structure(v) => v.pos.clone(),
-            ast::NspaceItem::Choice(v) => v.pos.clone(),
-            ast::NspaceItem::Service(v) => v.pos.clone(),
-            ast::NspaceItem::HttpService(v) => v.pos.clone(),
-            ast::NspaceItem::Nspace(v) => v.pos.clone(),
-        }
+        todo!()
     }
 }
 

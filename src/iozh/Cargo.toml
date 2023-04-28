@@ -1,0 +1,9 @@
+[package]
+name = "iozh-main"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+iozh_parse = { path = "../iozh_parse" }
+iozh_gen_scala2 = { path = "../iozh_gen_scala2" }
+clap = { version = "4.2.1", features = ["derive"] }

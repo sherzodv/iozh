@@ -1,0 +1,11 @@
+[package]
+name = "iozh_gen_scala2"
+version = "0.0.0"
+edition = "2021"
+
+[lib]
+
+[dependencies]
+iozh_parse = { path = "../iozh_parse" }
+stripmargin = "0.1.1"
+itertools = "0.10.5"
